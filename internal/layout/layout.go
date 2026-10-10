@@ -38,14 +38,36 @@ func Compute(root *config.Node, r Rect) []Placement {
 	return out
 }
 
-func compute(n *config.Node, r Rect, path []int, out *[]Placement) {
-	if r.Empty() {
-		return
+// ComputeAll is like Compute but also returns containers, parents before
+// children. Nodes with an empty rectangle are included so editors can still
+// select them.
+func ComputeAll(root *config.Node, r Rect) []Placement {
+	var out []Placement
+	computeAll(root, r, nil, &out)
+	return out
+}
+
+func computeAll(n *config.Node, r Rect, path []int, out *[]Placement) {
+	*out = append(*out, Placement{Node: n, Rect: r, Path: slices.Clone(path)})
+	for i, c := range n.Children {
+		computeAll(c, childRect(n, r, i), append(path, i), out)
 	}
-	if n.Dir == config.DirNone {
-		*out = append(*out, Placement{Node: n, Rect: r, Path: slices.Clone(path)})
-		return
+}
+
+// childRect returns the rectangle of child i of container n placed in r.
+func childRect(n *config.Node, r Rect, i int) Rect {
+	sizes := childSizes(n, r)
+	pos := 0
+	for j := 0; j < i; j++ {
+		pos += sizes[j]
 	}
+	if n.Dir == config.DirCol {
+		return Rect{X: r.X, Y: r.Y + pos, W: r.W, H: sizes[i]}
+	}
+	return Rect{X: r.X + pos, Y: r.Y, W: sizes[i], H: r.H}
+}
+
+func childSizes(n *config.Node, r Rect) []int {
 	total := r.W
 	if n.Dir == config.DirCol {
 		total = r.H
@@ -54,7 +76,68 @@ func compute(n *config.Node, r Rect, path []int, out *[]Placement) {
 	for i, c := range n.Children {
 		items[i] = Item{Size: c.Size, Weight: c.Weight, Min: c.Min, Max: c.Max}
 	}
-	sizes := Split(total, items)
+	return Split(total, items)
+}
+
+// Direction for Neighbor.
+type Direction uint8
+
+// Directions.
+const (
+	Up Direction = iota
+	Down
+	Left
+	Right
+)
+
+// Neighbor returns the index in ps of the placement closest to from in
+// direction d, preferring the one that overlaps it most, or -1.
+func Neighbor(ps []Placement, from Rect, d Direction) int {
+	best, bestDist, bestOverlap := -1, 1<<30, -1
+	for i, p := range ps {
+		r := p.Rect
+		if r.Empty() || r == from {
+			continue
+		}
+		var dist, overlap int
+		switch d {
+		case Left:
+			dist = from.X - (r.X + r.W)
+			overlap = span(from.Y, from.H, r.Y, r.H)
+		case Right:
+			dist = r.X - (from.X + from.W)
+			overlap = span(from.Y, from.H, r.Y, r.H)
+		case Up:
+			dist = from.Y - (r.Y + r.H)
+			overlap = span(from.X, from.W, r.X, r.W)
+		case Down:
+			dist = r.Y - (from.Y + from.H)
+			overlap = span(from.X, from.W, r.X, r.W)
+		}
+		if dist < 0 || overlap <= 0 {
+			continue
+		}
+		if dist < bestDist || (dist == bestDist && overlap > bestOverlap) {
+			best, bestDist, bestOverlap = i, dist, overlap
+		}
+	}
+	return best
+}
+
+// span returns the length of the overlap of [a, a+al) and [b, b+bl).
+func span(a, al, b, bl int) int {
+	return min(a+al, b+bl) - max(a, b)
+}
+
+func compute(n *config.Node, r Rect, path []int, out *[]Placement) {
+	if r.Empty() {
+		return
+	}
+	if n.Dir == config.DirNone {
+		*out = append(*out, Placement{Node: n, Rect: r, Path: slices.Clone(path)})
+		return
+	}
+	sizes := childSizes(n, r)
 	pos := 0
 	for i, c := range n.Children {
 		cr := Rect{X: r.X + pos, Y: r.Y, W: sizes[i], H: r.H}

@@ -109,3 +109,29 @@ func TestDefaultDashboardsFill(t *testing.T) {
 		}
 	}
 }
+
+func TestComputeAllAndNeighbor(t *testing.T) {
+	var root config.Node
+	src := "col:\n  - widget: cpu\n    size: 10\n  - row:\n      - widget: mem\n      - widget: proc\n        weight: 3\n"
+	if err := yaml.Unmarshal([]byte(src), &root); err != nil {
+		t.Fatal(err)
+	}
+	all := ComputeAll(&root, Rect{W: 80, H: 30})
+	if len(all) != 5 || all[0].Node != &root || all[2].Node.Dir != config.DirRow {
+		t.Fatalf("all %+v", all)
+	}
+	if all[2].Rect != (Rect{0, 10, 80, 20}) {
+		t.Fatalf("row rect %+v", all[2].Rect)
+	}
+	leaves := Compute(&root, Rect{W: 80, H: 30})
+	cpu, mem, proc := leaves[0].Rect, leaves[1].Rect, leaves[2].Rect
+	if i := Neighbor(leaves, mem, Right); leaves[i].Rect != proc {
+		t.Fatal("right of mem")
+	}
+	if i := Neighbor(leaves, proc, Up); leaves[i].Rect != cpu {
+		t.Fatal("up from proc")
+	}
+	if Neighbor(leaves, cpu, Up) != -1 {
+		t.Fatal("nothing above cpu")
+	}
+}

@@ -29,6 +29,7 @@ import (
 type Options struct {
 	Config     *config.Config
 	ConfigPath string // watched for changes when set
+	SavePath   string // where the layout editor saves; may not exist yet
 	Source     source.Source
 	Procs      collect.ProcessController
 	Dashboard  string // dashboard to open; empty uses the config default
@@ -59,6 +60,7 @@ type Model struct {
 	frozen     string // last frame while paused
 
 	dialog   dialog
+	edit     *editor // layout editor, nil when not editing
 	status   string
 	statusAt time.Time
 
@@ -174,7 +176,9 @@ func (m *Model) relayout() {
 	d.root = d.cfg.LayoutFor(m.width, m.height-1)
 	unsup := m.unsupported()
 	m.unsupSig = fmt.Sprint(unsup)
-	if pruned := pruneUnsupported(d.root, d.widgets, unsup); pruned != nil {
+	if m.edit != nil && m.edit.d == d {
+		d.root = m.edit.root() // the editor shows every widget, paths must match the config
+	} else if pruned := pruneUnsupported(d.root, d.widgets, unsup); pruned != nil {
 		d.root = pruned
 	}
 	d.places = layout.Compute(d.root, layout.Rect{X: 0, Y: 1, W: m.width, H: m.height - 1})
@@ -347,6 +351,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitStore()
 
 	case configMsg:
+		if m.edit != nil && m.edit.dirty {
+			m.setStatus("config changed on disk; save (ctrl+s) or leave the editor to reload")
+			return m, m.waitConfig()
+		}
+		var editing string
+		var sel []int
+		if m.edit != nil {
+			editing, sel = m.edit.d.name, m.edit.sel
+			m.edit = nil
+		}
+		defer func() {
+			if editing != "" && m.current().name == editing {
+				m.startEdit()
+				if m.edit.root().At(sel) != nil {
+					m.edit.sel = sel
+				}
+			}
+		}()
 		if msg.err != nil {
 			m.setStatus("config not reloaded: " + firstLine(msg.err.Error()))
 		} else if err := m.applyConfig(msg.cfg); err != nil {
@@ -392,17 +414,32 @@ func firstLine(s string) string {
 	return l
 }
 
+// statusText returns the status message while it is fresh.
+func (m *Model) statusText() string {
+	if m.status != "" && time.Since(m.statusAt) < 5*time.Second {
+		return m.status
+	}
+	return ""
+}
+
 func (m *Model) setStatus(s string) {
 	m.status, m.statusAt = s, time.Now()
 }
 
 func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	if m.dialog != nil {
-		done, cmd := m.dialog.key(k)
-		if done {
+		d := m.dialog
+		done, cmd := d.key(k)
+		if done && m.dialog == d { // the callback may have opened another dialog
 			m.dialog = nil
 		}
 		return cmd
+	}
+	if m.edit != nil {
+		if k.String() == "ctrl+c" {
+			return m.quit()
+		}
+		return m.handleEditKey(k)
 	}
 	a := m.ctx.action(k, keymap.Global)
 	switch {
@@ -442,6 +479,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		m.dialog = m.helpDialog()
 	case "theme":
 		m.dialog = m.themeDialog()
+	case "edit":
+		m.startEdit()
 	default:
 		if n, ok := strings.CutPrefix(string(a), "dashboard_"); ok {
 			i, _ := strconv.Atoi(n)
@@ -491,6 +530,9 @@ func (m *Model) changeInterval(dir int) {
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if m.dialog != nil {
 		return nil
+	}
+	if m.edit != nil {
+		return m.handleEditMouse(msg)
 	}
 	mo := msg.Mouse()
 	if mo.Y == 0 {
@@ -561,7 +603,11 @@ func (m *Model) View() tea.View {
 
 func (m *Model) render() string {
 	screen := make([][]segment, m.height)
-	screen[0] = []segment{{0, m.topBar()}}
+	if m.edit != nil {
+		screen[0] = []segment{{0, m.editBar()}}
+	} else {
+		screen[0] = []segment{{0, m.topBar()}}
+	}
 	if m.height > 1 {
 		d := m.current()
 		if m.zoom {
@@ -569,7 +615,11 @@ func (m *Model) render() string {
 			m.drawWidget(screen, d.widgets[d.places[m.focus].Node], d.places[m.focus].Node, r, true)
 		} else {
 			for i, p := range d.places {
-				m.drawWidget(screen, d.widgets[p.Node], p.Node, p.Rect, i == m.focus)
+				focused := i == m.focus
+				if m.edit != nil {
+					focused = m.edit.inSelection(p.Path)
+				}
+				m.drawWidget(screen, d.widgets[p.Node], p.Node, p.Rect, focused)
 			}
 		}
 	}
@@ -684,8 +734,8 @@ func (m *Model) topBar() string {
 	}
 	sep := fg(t.Dim, " │ ")
 	status := ""
-	if m.status != "" && time.Since(m.statusAt) < 5*time.Second {
-		status = fg(t.Warn, m.status)
+	if s := m.statusText(); s != "" {
+		status = fg(t.Warn, s)
 	}
 	if m.paused {
 		status = strings.TrimPrefix(status+sep+fg(t.Crit, bold("PAUSED")), sep)

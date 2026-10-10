@@ -215,3 +215,67 @@ func TestWatch(t *testing.T) {
 		t.Fatal("no change notification")
 	}
 }
+
+func TestCloneAndAt(t *testing.T) {
+	db, _ := Default().Dashboards.Get("server")
+	cp := db.Clone()
+	if cp.Layout == db.Layout || cp.Layout.Children[0] == db.Layout.Children[0] {
+		t.Fatal("clone shares nodes")
+	}
+	g := cp.Layout.At([]int{0, 1})
+	if g == nil || g.Widget != "graph" {
+		t.Fatalf("At: %+v", g)
+	}
+	g.Options.Content[1].Value = "changed"
+	if db.Layout.At([]int{0, 1}).Options.Content[1].Value == "changed" {
+		t.Fatal("clone shares options")
+	}
+	if cp.Layout.At([]int{9}) != nil {
+		t.Fatal("At out of range")
+	}
+}
+
+func TestSaveDashboard(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "config.yaml")
+	db := &Dashboard{Title: "Mine", Layout: &Node{Dir: DirRow, Weight: 1, Children: []*Node{
+		{Widget: "cpu", Weight: 2}, {Widget: "mem", Weight: 1, Size: Size{Kind: SizePercent, Value: 30}},
+	}}}
+	// New file.
+	if err := SaveDashboard(path, "mine", db, []string{"btop", "mine"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cfg.Dashboards.Get("mine")
+	if !ok || got.Title != "Mine" || got.Layout.Children[1].Size.Value != 30 || got.Layout.Children[0].Weight != 2 {
+		t.Fatalf("saved %+v", got)
+	}
+	if tabs := cfg.Tabs(); len(tabs) != 2 || tabs[1] != "mine" {
+		t.Fatalf("tabs %v", tabs)
+	}
+
+	// Existing file: comments and other settings survive, a backup is made.
+	orig := "# my config\ngeneral:\n  theme: nord # favourite\ndashboards:\n  other:\n    layout: {widget: proc}\n"
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	db.Title = "Mine 2"
+	if err := SaveDashboard(path, "mine", db, nil); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	for _, want := range []string{"# my config", "# favourite", "theme: nord", "other:", "Mine 2"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("missing %q in:\n%s", want, data)
+		}
+	}
+	if bak, _ := os.ReadFile(path + ".bak"); string(bak) != orig {
+		t.Fatal("backup differs")
+	}
+	if _, err := Load(path, false); err != nil {
+		t.Fatal(err)
+	}
+}

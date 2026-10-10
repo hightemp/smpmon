@@ -15,6 +15,7 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 - GPUs (NVIDIA through `nvidia-smi`, AMD and Intel through sysfs on Linux), temperature and fan sensors, batteries, and Docker containers
 - Linux, macOS and Windows
 - Dashboards described as a YAML layout tree of widgets, switchable with `1`–`9`, with size-dependent variants for narrow terminals
+- A layout editor inside the TUI (`e`): split, add, delete, move and resize widgets, drag borders with the mouse, edit widget options, undo, and save back to the config file
 - Built-in dashboards: `btop`, `minimal`, `procs`, `net`, `server`, `hardware`, `containers`. Widgets whose data isn't available on the machine, such as a battery on a desktop, are hidden automatically
 - Graphs in braille, block or ASCII mode, with gradients, mirrored upload/download, and auto or log scale
 - Generic `graph`, `gauge`, `stat` and `table` widgets that show any metric by selector, such as `cpu.core.*.usage` or `net.*.*_bps`
@@ -22,7 +23,7 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 - Mouse support, built-in themes, and config hot reload
 - A single static binary with no cgo
 
-Planned: an in-TUI layout editor, theme files, rebindable keys, metric history, alerts, Prometheus export and remote agents.
+Planned: metric history, alerts, Prometheus export and remote agents.
 
 ## Install
 
@@ -70,6 +71,7 @@ These are the default bindings; `?` shows the current ones. A `vim` preset and p
 | `+` / `-` | change the update interval |
 | `g` | cycle graph mode (braille / block / ascii) |
 | `T` | choose a theme |
+| `e` | edit the dashboard layout |
 | `p` | pause the display |
 | `?` | help |
 | `q`, `ctrl+c` | quit |
@@ -139,6 +141,29 @@ dashboards:
 
 A layout node is one of `row` (children side by side), `col` (children stacked) or `widget`. A node's share of its parent is set with `size: 10` (cells), `size: 30%` or `weight: 2` (share of the remaining space, default 1), optionally bounded by `min` and `max`.
 
+### Layout editor
+
+Press `e` to edit the current dashboard. The selected widget or container is highlighted and its path is shown in the top bar.
+
+| Key | Action |
+|---|---|
+| `←` `↑` `→` `↓`, mouse click | select the neighbouring widget |
+| `[` / `]` | select the parent container / first child |
+| `s` / `v` | add a widget to the right / below |
+| `a` | add a widget after the selection |
+| `d` | delete |
+| `<` / `>` | move before / after the neighbour |
+| `+` / `-`, drag a border | resize |
+| `r` | switch a container between row and column |
+| `t` | change the widget type |
+| `o`, `enter` | edit title, size and widget options |
+| `u` / `U` | undo / redo |
+| `n` / `R` | new dashboard / rename |
+| `ctrl+s` | save |
+| `esc` | leave the editor |
+
+Saving writes only `dashboards.<name>` (and the tab list) into your config file. Everything else, including comments, is kept, and the previous file is saved as `config.yaml.bak`. When the terminal is narrow enough for a dashboard's `variants` to apply, the editor changes that variant.
+
 ### Key bindings
 
 ```yaml
@@ -152,7 +177,7 @@ keys:
 
 The `vim` preset adds `h` `j` `k` `l`, `ctrl+u` / `ctrl+d`, `g` / `G` for navigation, moves kill to `x` / `X` and graph mode to `M`. Keys are names like `x`, `X`, `ctrl+u`, `shift+tab`, `pgdown`, `space`, `enter`, `f5`. Keys bound to two actions that are active at the same time are reported as errors. A key bound in a widget shadows the same global key while that widget is focused. `ctrl+c` always quits.
 
-Actions: `quit`, `help`, `focus_next`, `focus_prev`, `zoom`, `back`, `pause`, `interval_up`, `interval_down`, `graph_mode`, `theme`, `dashboard_1`…`dashboard_9`; navigation `up`, `down`, `page_up`, `page_down`, `home`, `end`, `left`, `right`; processes `proc_filter`, `proc_reverse`, `proc_tree`, `proc_collapse`, `proc_details`, `proc_kill`, `proc_kill_force`, `proc_signal`, `proc_renice`, `proc_per_core`; `net_prev`, `net_next`; `docker_all`.
+Actions: `quit`, `help`, `focus_next`, `focus_prev`, `zoom`, `back`, `pause`, `interval_up`, `interval_down`, `graph_mode`, `theme`, `edit`, `dashboard_1`…`dashboard_9`; navigation `up`, `down`, `page_up`, `page_down`, `home`, `end`, `left`, `right`; processes `proc_filter`, `proc_reverse`, `proc_tree`, `proc_collapse`, `proc_details`, `proc_kill`, `proc_kill_force`, `proc_signal`, `proc_renice`, `proc_per_core`; `net_prev`, `net_next`; `docker_all`; editor `edit_parent`, `edit_child`, `edit_split_h`, `edit_split_v`, `edit_add`, `edit_delete`, `edit_move_prev`, `edit_move_next`, `edit_grow`, `edit_shrink`, `edit_rotate`, `edit_type`, `edit_options`, `edit_undo`, `edit_redo`, `edit_save`, `edit_new`, `edit_title`.
 
 ### Themes
 

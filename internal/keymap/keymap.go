@@ -23,6 +23,7 @@ const (
 	Proc   Scope = "proc"
 	Net    Scope = "net"
 	Docker Scope = "docker"
+	Editor Scope = "editor" // layout editor
 )
 
 // ActionInfo describes an action.
@@ -45,6 +46,7 @@ var Actions = []ActionInfo{
 	{"interval_down", Global, "update more often"},
 	{"graph_mode", Global, "cycle graph mode"},
 	{"theme", Global, "choose theme"},
+	{"edit", Global, "edit the dashboard layout"},
 	{"dashboard_1", Global, "dashboard 1"}, {"dashboard_2", Global, "dashboard 2"},
 	{"dashboard_3", Global, "dashboard 3"}, {"dashboard_4", Global, "dashboard 4"},
 	{"dashboard_5", Global, "dashboard 5"}, {"dashboard_6", Global, "dashboard 6"},
@@ -75,6 +77,25 @@ var Actions = []ActionInfo{
 	{"net_next", Net, "next interface"},
 
 	{"docker_all", Docker, "show stopped containers"},
+
+	{"edit_parent", Editor, "select the parent container"},
+	{"edit_child", Editor, "select the first child"},
+	{"edit_split_h", Editor, "split: add a widget to the right"},
+	{"edit_split_v", Editor, "split: add a widget below"},
+	{"edit_add", Editor, "add a widget after the selection"},
+	{"edit_delete", Editor, "delete the selection"},
+	{"edit_move_prev", Editor, "move before the previous sibling"},
+	{"edit_move_next", Editor, "move after the next sibling"},
+	{"edit_grow", Editor, "make bigger"},
+	{"edit_shrink", Editor, "make smaller"},
+	{"edit_rotate", Editor, "switch row / column"},
+	{"edit_type", Editor, "change the widget type"},
+	{"edit_options", Editor, "edit title, size and options"},
+	{"edit_undo", Editor, "undo"},
+	{"edit_redo", Editor, "redo"},
+	{"edit_save", Editor, "save to the config file"},
+	{"edit_new", Editor, "new dashboard"},
+	{"edit_title", Editor, "rename the dashboard"},
 }
 
 func defaults() map[Action][]string {
@@ -98,6 +119,16 @@ func defaults() map[Action][]string {
 
 		"net_prev": {"b"}, "net_next": {"n"},
 		"docker_all": {"a"},
+		"edit":       {"e"},
+
+		"edit_parent": {"["}, "edit_child": {"]"},
+		"edit_split_h": {"s"}, "edit_split_v": {"v"}, "edit_add": {"a"},
+		"edit_delete":    {"d", "delete"},
+		"edit_move_prev": {"<", ","}, "edit_move_next": {">", "."},
+		"edit_grow": {"+", "="}, "edit_shrink": {"-", "_"},
+		"edit_rotate": {"r"}, "edit_type": {"t"}, "edit_options": {"o", "enter"},
+		"edit_undo": {"u", "ctrl+z"}, "edit_redo": {"U", "ctrl+y"},
+		"edit_save": {"ctrl+s"}, "edit_new": {"n"}, "edit_title": {"R"},
 	}
 }
 
@@ -197,7 +228,7 @@ func Build(preset string, overrides map[string][]string) (*Keymap, error) {
 // conflicts reports keys bound to two actions that are active together:
 // within the global scope, and within each widget scope plus navigation.
 func (m *Keymap) conflicts() error {
-	groups := [][]Scope{{Global}, {Nav, Proc}, {Nav, Net}, {Nav, Docker}}
+	groups := [][]Scope{{Global}, {Nav, Proc}, {Nav, Net}, {Nav, Docker}, {Nav, Editor}}
 	var errs []error
 	reported := map[string]bool{}
 	for _, g := range groups {

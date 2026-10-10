@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -89,6 +90,30 @@ type factory func(n *config.Node) (Widget, error)
 var factories = map[string]factory{}
 
 func register(name string, f factory) { factories[name] = f }
+
+// widgetMeta describes a widget type for the layout editor.
+type widgetMeta struct {
+	help    string
+	options reflect.Type // the options struct
+	example string       // options YAML for a new instance, if required
+}
+
+var metas = map[string]widgetMeta{
+	"cpu":     {"CPU graph and per-core usage", reflect.TypeFor[cpuOptions](), ""},
+	"mem":     {"memory and swap", reflect.TypeFor[memOptions](), ""},
+	"disks":   {"filesystems and disk I/O", reflect.TypeFor[disksOptions](), ""},
+	"net":     {"network throughput", reflect.TypeFor[netOptions](), ""},
+	"proc":    {"process table", reflect.TypeFor[procOptions](), ""},
+	"gpu":     {"GPU usage", reflect.TypeFor[gpuOptions](), ""},
+	"sensors": {"temperatures and fans", reflect.TypeFor[sensorsOptions](), ""},
+	"battery": {"battery charge", reflect.TypeFor[struct{}](), ""},
+	"docker":  {"containers", reflect.TypeFor[dockerOptions](), ""},
+	"graph":   {"graph of any metrics", reflect.TypeFor[graphOptions](), "metrics: [cpu.total.usage]"},
+	"gauge":   {"bar for one metric", reflect.TypeFor[gaugeOptions](), "metric: cpu.total.usage"},
+	"stat":    {"big number with sparkline", reflect.TypeFor[statOptions](), "metric: mem.used_percent"},
+	"table":   {"table of metrics", reflect.TypeFor[tableOptions](), "metrics: ['mem.*']"},
+	"text":    {"text with host info", reflect.TypeFor[textOptions](), ""},
+}
 
 // KnownWidget reports whether a widget type exists.
 func KnownWidget(name string) bool {

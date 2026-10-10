@@ -47,6 +47,7 @@ func runTUI(ctx context.Context, opts *rootOptions) error {
 	return ui.Run(ctx, ui.Options{
 		Config:     cfg,
 		ConfigPath: watch,
+		SavePath:   path,
 		Source:     src,
 		Procs:      platform.ProcessController(),
 		Dashboard:  opts.dashboard,

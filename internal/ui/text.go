@@ -141,3 +141,6 @@ func block(lines []string, w, h int) []string {
 	}
 	return out
 }
+
+// ansiStrip removes escape sequences, e.g. to restyle a whole line.
+func ansiStrip(s string) string { return ansi.Strip(s) }

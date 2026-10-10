@@ -421,3 +421,22 @@ func TestSelectPIDZero(t *testing.T) {
 		t.Fatalf("selection stuck on pid 0: %d", w.selPID)
 	}
 }
+
+func TestWidgetMetaComplete(t *testing.T) {
+	for _, name := range WidgetNames() {
+		m, ok := metas[name]
+		if !ok {
+			t.Errorf("no meta for %s", name)
+			continue
+		}
+		n := &config.Node{Widget: name}
+		if m.example != "" {
+			if err := yaml.Unmarshal([]byte(m.example), &n.Options); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := newWidget(n); err != nil {
+			t.Errorf("%s with example options: %v", name, err)
+		}
+	}
+}
