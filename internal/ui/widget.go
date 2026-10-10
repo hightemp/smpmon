@@ -135,3 +135,29 @@ func windowSamples(ctx *Context, window time.Duration) int {
 	}
 	return int(window / ctx.Interval)
 }
+
+// CheckConfig validates what only the UI knows: theme names and widget
+// options. It complements config.Config.Validate.
+func CheckConfig(cfg *config.Config) error {
+	if err := cfg.Validate(KnownWidget); err != nil {
+		return err
+	}
+	if _, err := LookupTheme(cfg.General.Theme); err != nil {
+		return fmt.Errorf("general.theme: %w", err)
+	}
+	for _, name := range cfg.Dashboards.Names {
+		db, _ := cfg.Dashboards.Get(name)
+		layouts := []*config.Node{db.Layout}
+		for _, v := range db.Variants {
+			layouts = append(layouts, v.Layout)
+		}
+		for _, l := range layouts {
+			for _, n := range l.Widgets() {
+				if _, err := newWidget(n); err != nil {
+					return fmt.Errorf("dashboard %q: %w", name, err)
+				}
+			}
+		}
+	}
+	return nil
+}

@@ -10,9 +10,6 @@ import (
 	"github.com/hightemp/smpmon/internal/ui"
 )
 
-// knownWidget validates widget names in config.
-var knownWidget = ui.KnownWidget
-
 // resolveConfigPath returns the config path and whether it was given
 // explicitly (an explicit path must exist).
 func resolveConfigPath(flag string) (string, bool, error) {
@@ -32,7 +29,7 @@ func loadConfig(flag string) (*config.Config, string, error) {
 	if err != nil {
 		return nil, path, err
 	}
-	if err := cfg.Validate(knownWidget); err != nil {
+	if err := ui.CheckConfig(cfg); err != nil {
 		return nil, path, fmt.Errorf("%s: invalid config:\n%w", path, err)
 	}
 	return cfg, path, nil

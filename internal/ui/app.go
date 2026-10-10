@@ -265,7 +265,7 @@ func (m *Model) waitConfig() tea.Cmd {
 		<-ch
 		cfg, err := config.Load(path, true)
 		if err == nil {
-			err = cfg.Validate(KnownWidget)
+			err = CheckConfig(cfg)
 		}
 		return configMsg{cfg: cfg, err: err}
 	}
