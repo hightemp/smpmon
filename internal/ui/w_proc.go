@@ -121,7 +121,8 @@ type procWidget struct {
 	filter    string
 	filtering bool // typing into the filter
 
-	selPID  int32 // 0 = no selection
+	hasSel  bool // PID 0 is a real process on macOS and Windows
+	selPID  int32
 	selIdx  int
 	offset  int
 	details bool
@@ -315,7 +316,7 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 	w.syncSelection()
 
 	detailsH := 0
-	if w.details && w.selPID != 0 && h >= 12 {
+	if w.details && w.hasSel && h >= 12 {
 		detailsH = 6
 	}
 	w.listY = 1
@@ -378,7 +379,7 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 		}
 		row := w.rows[idx]
 		p := row.p
-		selected := p.PID == w.selPID
+		selected := w.hasSel && p.PID == w.selPID
 		var b strings.Builder
 		for i, c := range w.cols {
 			if widths[i] < 0 {
@@ -416,6 +417,9 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 }
 
 func (w *procWidget) selected() *collect.Process {
+	if !w.hasSel {
+		return nil
+	}
 	for _, r := range w.rows {
 		if r.p.PID == w.selPID {
 			return r.p
@@ -456,7 +460,7 @@ func (w *procWidget) renderDetails(ctx *Context, width, h int) []string {
 // syncSelection keeps the selection on the same pid while rows move, and
 // on the same index when the selected process exits.
 func (w *procWidget) syncSelection() {
-	if w.selPID == 0 {
+	if !w.hasSel {
 		return
 	}
 	for i, r := range w.rows {
@@ -466,7 +470,7 @@ func (w *procWidget) syncSelection() {
 		}
 	}
 	if len(w.rows) == 0 {
-		w.selPID = 0
+		w.hasSel = false
 		return
 	}
 	w.selIdx = min(w.selIdx, len(w.rows)-1)
@@ -477,7 +481,7 @@ func (w *procWidget) clampScroll() {
 	if w.listH <= 0 {
 		return
 	}
-	if w.selPID != 0 {
+	if w.hasSel {
 		if w.selIdx < w.offset {
 			w.offset = w.selIdx
 		}
@@ -492,7 +496,7 @@ func (w *procWidget) moveSelection(delta int) {
 	if len(w.rows) == 0 {
 		return
 	}
-	if w.selPID == 0 {
+	if !w.hasSel {
 		w.selIdx = w.offset
 		if delta < 0 {
 			w.selIdx = min(w.offset+w.listH-1, len(w.rows)-1)
@@ -500,7 +504,7 @@ func (w *procWidget) moveSelection(delta int) {
 	} else {
 		w.selIdx = max(min(w.selIdx+delta, len(w.rows)-1), 0)
 	}
-	w.selPID = w.rows[w.selIdx].p.PID
+	w.selPID, w.hasSel = w.rows[w.selIdx].p.PID, true
 	w.clampScroll()
 }
 
@@ -566,11 +570,11 @@ func (w *procWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) 
 	case "proc_filter":
 		w.filtering = true
 	case "proc_collapse":
-		if w.tree && w.selPID != 0 {
+		if w.tree && w.hasSel {
 			w.collapsed[w.selPID] = !w.collapsed[w.selPID]
 		}
 	case "proc_details":
-		if w.selPID == 0 {
+		if !w.hasSel {
 			w.moveSelection(0)
 		}
 		w.details = !w.details
@@ -580,8 +584,8 @@ func (w *procWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) 
 			w.details = false
 		case w.filter != "":
 			w.filter = ""
-		case w.selPID != 0:
-			w.selPID = 0
+		case w.hasSel:
+			w.hasSel = false
 		default:
 			return false, nil
 		}
@@ -628,10 +632,10 @@ func (w *procWidget) HandleMouse(_ *Context, m tea.MouseMsg, x, y int) tea.Cmd {
 		}
 		idx := w.offset + y - w.listY
 		if y >= w.listY && y < w.listY+w.listH && idx < len(w.rows) {
-			if w.rows[idx].p.PID == w.selPID {
+			if w.hasSel && w.rows[idx].p.PID == w.selPID {
 				w.details = !w.details
 			}
-			w.selIdx, w.selPID = idx, w.rows[idx].p.PID
+			w.selIdx, w.selPID, w.hasSel = idx, w.rows[idx].p.PID, true
 		}
 	}
 	return nil

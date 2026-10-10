@@ -138,13 +138,13 @@ type Keymap struct {
 	scopes map[Action]Scope
 }
 
-func info(a Action) (ActionInfo, bool) {
+func known(a Action) bool {
 	for _, i := range Actions {
 		if i.Action == a {
-			return i, true
+			return true
 		}
 	}
-	return ActionInfo{}, false
+	return false
 }
 
 // Build creates a keymap from a preset and user overrides. An override
@@ -164,7 +164,7 @@ func Build(preset string, overrides map[string][]string) (*Keymap, error) {
 	var errs []error
 	for name, k := range overrides {
 		a := Action(name)
-		if _, ok := info(a); !ok {
+		if !known(a) {
 			errs = append(errs, fmt.Errorf("unknown action %q", name))
 			continue
 		}

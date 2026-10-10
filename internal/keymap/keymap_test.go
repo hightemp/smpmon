@@ -23,7 +23,7 @@ func TestDefaultsAndPresetsValid(t *testing.T) {
 		t.Fatal("unexpected")
 	}
 	for a := range defaults() {
-		if _, ok := info(a); !ok {
+		if !known(a) {
 			t.Errorf("default for unknown action %s", a)
 		}
 	}

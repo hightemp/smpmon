@@ -14,8 +14,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/collect/platform"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/keymap"
 	"github.com/hightemp/smpmon/internal/metrics"
 	"github.com/hightemp/smpmon/internal/source"
 )
@@ -392,5 +394,30 @@ func TestVimKeys(t *testing.T) {
 	joined := ansi.Strip(strings.Join(lines, "\n"))
 	if !strings.Contains(joined, "up / k") || !strings.Contains(joined, "Q") {
 		t.Fatalf("help does not reflect bindings:\n%s", joined)
+	}
+}
+
+// TestSelectPIDZero: PID 0 exists on macOS and Windows and must be selectable.
+func TestSelectPIDZero(t *testing.T) {
+	store := metrics.NewStore(metrics.DefaultStoreOptions())
+	store.Write(metrics.Sample{Tables: map[string]any{collect.TableProcesses: []collect.Process{
+		{PID: 0, Name: "kernel_task", CPU: 50}, {PID: 1, Name: "launchd", CPU: 10}, {PID: 2, Name: "x", CPU: 1},
+	}}})
+	keys, _ := keymap.Build("default", nil)
+	ctx := &Context{Store: store, Registry: metrics.DefaultRegistry, Theme: themes["default"], NumCPU: 1, Keys: keys, Now: time.Now()}
+	n := &config.Node{Widget: "proc"}
+	wd, err := newWidget(n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := wd.(*procWidget)
+	w.Render(ctx, 80, 10)
+	w.HandleKey(ctx, key("down"))
+	if !w.hasSel || w.selPID != 0 {
+		t.Fatalf("first row (pid 0) not selected: %v %d", w.hasSel, w.selPID)
+	}
+	w.HandleKey(ctx, key("down"))
+	if w.selPID != 1 {
+		t.Fatalf("selection stuck on pid 0: %d", w.selPID)
 	}
 }
