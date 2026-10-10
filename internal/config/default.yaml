@@ -27,6 +27,12 @@ collectors:
   procs:
     interval: 2s
 
+# Key bindings: a preset (default or vim) plus per-action overrides, e.g.
+#   bind: {quit: [q, ctrl+q], proc_kill: [x], pause: []}
+# Actions are listed in the help screen (?) and the README.
+keys:
+  preset: default
+
 # Layout nodes: `row` places children side by side, `col` stacks them.
 # A child's share of space is set with one of:
 #   size: 10      fixed number of cells

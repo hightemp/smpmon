@@ -353,3 +353,44 @@ func TestThemeDialog(t *testing.T) {
 	}
 	checkFrame(t, "after theme change", viewLines(t, m), 100, 30)
 }
+
+func TestVimKeys(t *testing.T) {
+	src := liveSource(t)
+	cfg, err := config.Parse([]byte("keys:\n  preset: vim\n  bind:\n    quit: [Q]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := New(Options{Config: cfg, Source: src, Procs: platform.ProcessController()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	viewLines(t, m)
+	w := m.focusedWidget().(*procWidget)
+	m.Update(key("j"))
+	m.Update(key("j"))
+	if w.selIdx != 1 || w.selPID == 0 {
+		t.Fatalf("j did not move the selection: idx %d pid %d", w.selIdx, w.selPID)
+	}
+	m.Update(key("k"))
+	if w.selIdx != 0 {
+		t.Fatalf("k did not move up: %d", w.selIdx)
+	}
+	_, cmd := m.Update(key("x"))
+	if cmd == nil {
+		t.Fatal("x should open the kill dialog")
+	}
+	if _, ok := cmd().(openDialogMsg); !ok {
+		t.Fatal("x did not produce a dialog")
+	}
+	if _, cmd := m.Update(key("q")); cmd != nil {
+		t.Fatal("q should be unbound")
+	}
+	m.Update(key("?"))
+	lines := viewLines(t, m)
+	checkFrame(t, "vim help", lines, 120, 40)
+	joined := ansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(joined, "up / k") || !strings.Contains(joined, "Q") {
+		t.Fatalf("help does not reflect bindings:\n%s", joined)
+	}
+}

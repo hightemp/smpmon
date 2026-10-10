@@ -12,6 +12,7 @@ import (
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/keymap"
 	"github.com/hightemp/smpmon/internal/metrics"
 )
 
@@ -220,8 +221,8 @@ func (s *sensorsWidget) Render(ctx *Context, w, h int) []string {
 }
 
 // HandleKey implements Interactive: scroll.
-func (s *sensorsWidget) HandleKey(_ *Context, k tea.KeyPressMsg) (bool, tea.Cmd) {
-	switch k.String() {
+func (s *sensorsWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) {
+	switch ctx.action(k, keymap.Nav) {
 	case "up":
 		s.offset = max(s.offset-1, 0)
 	case "down":
@@ -397,17 +398,17 @@ func (d *dockerWidget) Render(ctx *Context, w, h int) []string {
 }
 
 // HandleKey implements Interactive.
-func (d *dockerWidget) HandleKey(_ *Context, k tea.KeyPressMsg) (bool, tea.Cmd) {
-	switch k.String() {
+func (d *dockerWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) {
+	switch a := ctx.action(k, keymap.Nav, keymap.Docker); a {
 	case "up":
 		d.offset = max(d.offset-1, 0)
 	case "down":
 		d.offset++
-	case "a":
+	case "docker_all":
 		d.opts.All = !d.opts.All
 	case "left", "right":
 		i := slices.Index(dockerSorts, d.opts.Sort)
-		if k.String() == "right" {
+		if a == "right" {
 			i = (i + 1) % len(dockerSorts)
 		} else {
 			i = (i - 1 + len(dockerSorts)) % len(dockerSorts)
@@ -433,7 +434,7 @@ func (d *dockerWidget) HandleMouse(_ *Context, m tea.MouseMsg, _, _ int) tea.Cmd
 
 // Footer implements Interactive.
 func (d *dockerWidget) Footer(ctx *Context) string {
-	return hint(ctx, "←→", "sort") + " " + hint(ctx, "a", "all") + " " + hint(ctx, "↑↓", "scroll")
+	return joinHints(hint(ctx, "←→", "sort"), keyHint(ctx, "docker_all", "all"), hint(ctx, "↑↓", "scroll"))
 }
 
 // Capturing implements Interactive.

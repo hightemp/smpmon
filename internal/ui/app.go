@@ -19,6 +19,7 @@ import (
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/keymap"
 	"github.com/hightemp/smpmon/internal/layout"
 	"github.com/hightemp/smpmon/internal/metrics"
 	"github.com/hightemp/smpmon/internal/source"
@@ -115,6 +116,10 @@ func (m *Model) applyConfig(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	keys, err := keymap.Build(cfg.Keys.Preset, cfg.Keys.Bind)
+	if err != nil {
+		return err
+	}
 	var dbs []*dashboard
 	for _, name := range cfg.Tabs() {
 		dc, _ := cfg.Dashboards.Get(name)
@@ -150,6 +155,7 @@ func (m *Model) applyConfig(cfg *config.Config) error {
 		Interval:  m.opts.Source.Interval(),
 		Procs:     m.opts.Procs,
 		NumCPU:    runtime.NumCPU(),
+		Keys:      keys,
 	}
 	m.active = max(slices.IndexFunc(dbs, func(d *dashboard) bool { return d.name == prev }), 0)
 	m.relayout()
@@ -398,48 +404,48 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 		return cmd
 	}
-	switch k.String() {
-	case "ctrl+c":
-		return m.quit()
-	case "esc":
-		if m.zoom {
-			m.zoom = false
-			return nil
-		}
+	a := m.ctx.action(k, keymap.Global)
+	switch {
+	case k.String() == "ctrl+c":
+		return m.quit() // always available, whatever the bindings
+	case a == "back" && m.zoom:
+		m.zoom = false
+		return nil
 	}
 	if w, ok := m.focusedWidget().(Interactive); ok {
 		if handled, cmd := w.HandleKey(&m.ctx, k); handled || w.Capturing() {
 			return cmd
 		}
 	}
-	switch s := k.String(); s {
-	case "q":
+	switch a {
+	case "quit":
 		return m.quit()
-	case "tab":
+	case "focus_next":
 		m.cycleFocus(1)
-	case "shift+tab":
+	case "focus_prev":
 		m.cycleFocus(-1)
-	case "z":
+	case "zoom":
 		m.zoom = !m.zoom
-	case "esc":
+	case "back":
 		m.zoom = false
-	case "p":
+	case "pause":
 		m.paused = !m.paused
 		m.frozen = ""
-	case "+", "=":
+	case "interval_up":
 		m.changeInterval(1)
-	case "-", "_":
+	case "interval_down":
 		m.changeInterval(-1)
-	case "g":
+	case "graph_mode":
 		m.ctx.GraphMode = (m.ctx.GraphMode + 1) % 3
 		m.setStatus("graph mode: " + m.ctx.GraphMode.String())
-	case "?", "h", "f1":
+	case "help":
 		m.dialog = m.helpDialog()
-	case "T":
+	case "theme":
 		m.dialog = m.themeDialog()
 	default:
-		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
-			m.switchDashboard(int(s[0] - '1'))
+		if n, ok := strings.CutPrefix(string(a), "dashboard_"); ok {
+			i, _ := strconv.Atoi(n)
+			m.switchDashboard(i - 1)
 		}
 	}
 	return nil
@@ -735,29 +741,30 @@ func (m *Model) themeDialog() dialog {
 }
 
 func (m *Model) helpDialog() dialog {
-	return &helpDialog{sections: []helpSection{
-		{"Global", [][2]string{
-			{"1-9", "switch dashboard"},
-			{"tab / shift+tab", "focus next/previous widget"},
-			{"z / esc", "zoom focused widget"},
-			{"+ / -", "change update interval"},
-			{"g", "cycle graph mode (braille/block/ascii)"},
-			{"T", "choose theme"},
-			{"p", "pause display"},
-			{"q / ctrl+c", "quit"},
-		}},
-		{"Processes", [][2]string{
-			{"↑↓ pgup pgdn", "select"},
-			{"← →  r", "sort column, reverse"},
-			{"f or /", "filter"},
-			{"t / space", "tree view / collapse"},
-			{"enter", "details"},
-			{"k / K / s", "SIGTERM / SIGKILL / choose signal"},
-			{"i", "renice"},
-			{"c", "CPU per core / total"},
-		}},
-		{"Network", [][2]string{{"b / n", "previous / next interface"}}},
-	}}
+	names := map[keymap.Scope]string{
+		keymap.Global: "Global", keymap.Nav: "Lists", keymap.Proc: "Processes",
+		keymap.Net: "Network", keymap.Docker: "Docker",
+	}
+	var sections []helpSection
+	for _, scope := range []keymap.Scope{keymap.Global, keymap.Nav, keymap.Proc, keymap.Net, keymap.Docker} {
+		sec := helpSection{name: names[scope]}
+		for _, i := range keymap.Actions {
+			if i.Scope != scope || strings.HasPrefix(string(i.Action), "dashboard_") {
+				continue
+			}
+			if label := m.ctx.Keys.Label(i.Action); label != "" {
+				sec.keys = append(sec.keys, [2]string{label, i.Help})
+			}
+		}
+		if scope == keymap.Global {
+			first, last := m.ctx.Keys.First("dashboard_1"), m.ctx.Keys.First("dashboard_9")
+			if first != "" {
+				sec.keys = append(sec.keys, [2]string{first + "…" + last, "switch dashboard"})
+			}
+		}
+		sections = append(sections, sec)
+	}
+	return &helpDialog{sections: sections}
 }
 
 // colorProfiles maps general.color to forced profiles; "auto" detects.

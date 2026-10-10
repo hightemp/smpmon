@@ -11,6 +11,7 @@ import (
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/keymap"
 	"github.com/hightemp/smpmon/internal/metrics"
 )
 
@@ -25,6 +26,33 @@ type Context struct {
 	Now       time.Time
 	Procs     collect.ProcessController // nil if unsupported
 	NumCPU    int
+	Keys      *keymap.Keymap
+}
+
+// action resolves a key press to an action in the given scopes.
+func (c *Context) action(k tea.KeyPressMsg, scopes ...keymap.Scope) keymap.Action {
+	a, _ := c.Keys.Match(k.String(), scopes...)
+	return a
+}
+
+// keyHint formats the first key of an action with a label for footers.
+func keyHint(ctx *Context, a keymap.Action, label string) string {
+	k := ctx.Keys.First(a)
+	if k == "" {
+		return ""
+	}
+	return hint(ctx, k, label)
+}
+
+// joinHints joins non-empty hints with spaces.
+func joinHints(hints ...string) string {
+	var out []string
+	for _, h := range hints {
+		if h != "" {
+			out = append(out, h)
+		}
+	}
+	return strings.Join(out, " ")
 }
 
 // Widget is a dashboard tile. Render is called with the inner size (inside

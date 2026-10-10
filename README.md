@@ -60,6 +60,8 @@ smpmon version
 
 ### Keys
 
+These are the default bindings; `?` shows the current ones. A `vim` preset and per-action overrides are available, see [Key bindings](#key-bindings).
+
 | Key | Action |
 |---|---|
 | `1`–`9` | switch dashboard |
@@ -136,6 +138,21 @@ dashboards:
 ```
 
 A layout node is one of `row` (children side by side), `col` (children stacked) or `widget`. A node's share of its parent is set with `size: 10` (cells), `size: 30%` or `weight: 2` (share of the remaining space, default 1), optionally bounded by `min` and `max`.
+
+### Key bindings
+
+```yaml
+keys:
+  preset: vim            # default | vim
+  bind:                  # action: [keys]; an empty list unbinds
+    quit: [q, ctrl+q]
+    proc_kill: [x]
+    pause: []
+```
+
+The `vim` preset adds `h` `j` `k` `l`, `ctrl+u` / `ctrl+d`, `g` / `G` for navigation, moves kill to `x` / `X` and graph mode to `M`. Keys are names like `x`, `X`, `ctrl+u`, `shift+tab`, `pgdown`, `space`, `enter`, `f5`. Keys bound to two actions that are active at the same time are reported as errors. A key bound in a widget shadows the same global key while that widget is focused. `ctrl+c` always quits.
+
+Actions: `quit`, `help`, `focus_next`, `focus_prev`, `zoom`, `back`, `pause`, `interval_up`, `interval_down`, `graph_mode`, `theme`, `dashboard_1`…`dashboard_9`; navigation `up`, `down`, `page_up`, `page_down`, `home`, `end`, `left`, `right`; processes `proc_filter`, `proc_reverse`, `proc_tree`, `proc_collapse`, `proc_details`, `proc_kill`, `proc_kill_force`, `proc_signal`, `proc_renice`, `proc_per_core`; `net_prev`, `net_next`; `docker_all`.
 
 ### Themes
 

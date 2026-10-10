@@ -30,7 +30,14 @@ type Config struct {
 	Version    int                        `yaml:"version"`
 	General    General                    `yaml:"general"`
 	Collectors map[string]CollectorConfig `yaml:"collectors"`
+	Keys       Keys                       `yaml:"keys"`
 	Dashboards Dashboards                 `yaml:"dashboards"`
+}
+
+// Keys configures key bindings: a preset plus per-action overrides.
+type Keys struct {
+	Preset string              `yaml:"preset"`
+	Bind   map[string][]string `yaml:"bind,omitempty"`
 }
 
 // General holds global UI and collection settings.
@@ -253,6 +260,8 @@ func parse(data []byte, base *Config) (*Config, error) {
 			err = val.Decode(&cfg.General)
 		case "collectors":
 			err = val.Decode(&cfg.Collectors)
+		case "keys":
+			err = val.Decode(&cfg.Keys)
 		case "dashboards":
 			var ds Dashboards
 			if err = val.Decode(&ds); err == nil {

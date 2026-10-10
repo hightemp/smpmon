@@ -140,26 +140,53 @@ type helpSection struct {
 
 func (d *helpDialog) title() string { return "help" }
 
-func (d *helpDialog) lines(ctx *Context, _ int) []string {
+func (d *helpDialog) lines(ctx *Context, w int) []string {
 	t := ctx.Theme
-	var out []string
-	for i, s := range d.sections {
-		if i > 0 {
-			out = append(out, "")
+	render := func(secs []helpSection) []string {
+		var out []string
+		for i, s := range secs {
+			if i > 0 {
+				out = append(out, "")
+			}
+			out = append(out, fg(t.Title, bold(s.name)))
+			for _, k := range s.keys {
+				out = append(out, "  "+fg(t.Hotkey, fmt.Sprintf("%-18s", k[0]))+fg(t.DialogFg, k[1]))
+			}
 		}
-		out = append(out, fg(t.Title, bold(s.name)))
-		for _, k := range s.keys {
-			out = append(out, "  "+fg(t.Hotkey, fmt.Sprintf("%-14s", k[0]))+fg(t.DialogFg, k[1]))
-		}
+		return out
 	}
-	return append(out, "", fg(t.Dim, "press any key to close"))
+	// Two columns when there is room: the first section on the left.
+	if w >= 90 && len(d.sections) > 1 {
+		left, right := render(d.sections[:1]), render(d.sections[1:])
+		colW := w / 2
+		var out []string
+		for i := 0; i < max(len(left), len(right)); i++ {
+			var l, r string
+			if i < len(left) {
+				l = left[i]
+			}
+			if i < len(right) {
+				r = right[i]
+			}
+			out = append(out, fit(l, colW)+r)
+		}
+		return append(out, "", fg(t.Dim, "press any key to close"))
+	}
+	return append(render(d.sections), "", fg(t.Dim, "press any key to close"))
 }
+
+// maxWidth lets the help dialog use more of the screen.
+func (d *helpDialog) maxWidth() int { return 110 }
 
 func (d *helpDialog) key(tea.KeyPressMsg) (bool, tea.Cmd) { return true, nil }
 
 // renderDialog draws a dialog box sized to its content, at most maxW×maxH.
 func renderDialog(ctx *Context, d dialog, maxW, maxH int) []string {
-	innerW := min(maxW-4, 72)
+	limit := 72
+	if wd, ok := d.(interface{ maxWidth() int }); ok {
+		limit = wd.maxWidth()
+	}
+	innerW := min(maxW-4, limit)
 	content := d.lines(ctx, innerW)
 	cw := 0
 	for _, l := range content {

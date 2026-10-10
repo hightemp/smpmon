@@ -13,6 +13,7 @@ import (
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/keymap"
 	"github.com/hightemp/smpmon/internal/metrics"
 )
 
@@ -206,12 +207,11 @@ func (w *procWidget) Footer(ctx *Context) string {
 	if w.filtering {
 		return hint(ctx, "enter", "apply") + " " + hint(ctx, "esc", "clear")
 	}
-	parts := []string{
-		hint(ctx, "f", "filter"), hint(ctx, "←→", "sort"), hint(ctx, "r", "rev"),
-		hint(ctx, "t", "tree"), hint(ctx, "k", "kill"), hint(ctx, "s", "signal"),
-		hint(ctx, "i", "nice"), hint(ctx, "↵", "info"),
-	}
-	return strings.Join(parts, " ")
+	return joinHints(
+		keyHint(ctx, "proc_filter", "filter"), hint(ctx, "←→", "sort"), keyHint(ctx, "proc_reverse", "rev"),
+		keyHint(ctx, "proc_tree", "tree"), keyHint(ctx, "proc_kill", "kill"), keyHint(ctx, "proc_signal", "signal"),
+		keyHint(ctx, "proc_renice", "nice"), keyHint(ctx, "proc_details", "info"),
+	)
 }
 
 // visible builds the displayed rows: filtered, sorted or as a tree.
@@ -540,14 +540,14 @@ func (w *procWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) 
 		return true, nil
 	}
 	page := max(w.listH-1, 1)
-	switch k.String() {
+	switch ctx.action(k, keymap.Nav, keymap.Proc, keymap.Global) {
 	case "up":
 		w.moveSelection(-1)
 	case "down":
 		w.moveSelection(1)
-	case "pgup":
+	case "page_up":
 		w.moveSelection(-page)
-	case "pgdown":
+	case "page_down":
 		w.moveSelection(page)
 	case "home":
 		w.moveSelection(-len(w.rows))
@@ -557,24 +557,24 @@ func (w *procWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) 
 		w.cycleSort(-1)
 	case "right":
 		w.cycleSort(1)
-	case "r":
+	case "proc_reverse":
 		w.desc = !w.desc
-	case "t":
+	case "proc_tree":
 		w.tree = !w.tree
-	case "c":
+	case "proc_per_core":
 		w.perCore = !w.perCore
-	case "f", "/":
+	case "proc_filter":
 		w.filtering = true
-	case "space":
+	case "proc_collapse":
 		if w.tree && w.selPID != 0 {
 			w.collapsed[w.selPID] = !w.collapsed[w.selPID]
 		}
-	case "enter":
+	case "proc_details":
 		if w.selPID == 0 {
 			w.moveSelection(0)
 		}
 		w.details = !w.details
-	case "esc":
+	case "back":
 		switch {
 		case w.details:
 			w.details = false
@@ -585,13 +585,13 @@ func (w *procWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) 
 		default:
 			return false, nil
 		}
-	case "k":
+	case "proc_kill":
 		return true, w.signalCmd(ctx, 0)
-	case "K":
+	case "proc_kill_force":
 		return true, w.signalCmd(ctx, 1)
-	case "s":
+	case "proc_signal":
 		return true, w.chooseSignalCmd(ctx)
-	case "i":
+	case "proc_renice":
 		return true, w.reniceCmd(ctx)
 	default:
 		return false, nil

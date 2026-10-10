@@ -9,6 +9,7 @@ import (
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/keymap"
 	"github.com/hightemp/smpmon/internal/metrics"
 )
 
@@ -146,10 +147,10 @@ func last(v []float64) float64 {
 
 // HandleKey implements Interactive: b/n cycle interfaces.
 func (n *netWidget) HandleKey(ctx *Context, k tea.KeyPressMsg) (bool, tea.Cmd) {
-	switch k.String() {
-	case "n", "right":
+	switch ctx.action(k, keymap.Nav, keymap.Net) {
+	case "net_next", "right":
 		n.cycle(ctx, 1)
-	case "b", "left":
+	case "net_prev", "left":
 		n.cycle(ctx, -1)
 	default:
 		return false, nil
@@ -171,7 +172,7 @@ func (n *netWidget) HandleMouse(ctx *Context, m tea.MouseMsg, _, _ int) tea.Cmd 
 
 // Footer implements Interactive.
 func (n *netWidget) Footer(ctx *Context) string {
-	return hint(ctx, "b", "prev") + " " + hint(ctx, "n", "next")
+	return joinHints(keyHint(ctx, "net_prev", "prev"), keyHint(ctx, "net_next", "next"))
 }
 
 // Capturing implements Interactive.

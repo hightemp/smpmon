@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/hightemp/smpmon/internal/chart"
+	"github.com/hightemp/smpmon/internal/keymap"
 )
 
 // ColorModes lists the valid values of general.color.
@@ -33,6 +34,9 @@ func (c *Config) Validate(knownWidget func(string) bool) error {
 	}
 	if !slices.Contains(BorderStyles, g.Border) {
 		add("general.border: unknown style %q (want one of %v)", g.Border, BorderStyles)
+	}
+	if _, err := keymap.Build(c.Keys.Preset, c.Keys.Bind); err != nil {
+		add("keys: %w", err)
 	}
 	for name, cc := range c.Collectors {
 		if cc.Interval != 0 && cc.Interval < MinInterval {
