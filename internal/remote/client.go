@@ -253,7 +253,7 @@ func (c *Client) session(ctx context.Context) error {
 		case TypePong:
 			c.mu.Lock()
 			if sent, ok := c.pingSent[m.ID]; ok {
-				c.info.Latency = time.Since(sent)
+				c.info.Latency = max(time.Since(sent), time.Nanosecond) // non-zero once measured
 				delete(c.pingSent, m.ID)
 			}
 			c.mu.Unlock()

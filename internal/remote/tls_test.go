@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func TestTLSAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := os.Stat(key); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(key); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("key mode %v", st.Mode())
 	}
 	token, _ := GenerateToken()

@@ -57,13 +57,17 @@ func buildSmpmon(t *testing.T, dir string) string {
 }
 
 func TestSSHEndToEnd(t *testing.T) {
+	// Build before changing HOME, or go would put its caches there.
+	bin := buildSmpmon(t, t.TempDir())
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	binDir := filepath.Join(home, ".local", "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	buildSmpmon(t, binDir)
+	if err := os.Rename(bin, filepath.Join(binDir, "smpmon")); err != nil {
+		t.Fatal(err)
+	}
 	ssh := fakeSSH(t)
 
 	c := NewClient(ClientOptions{Name: "srv", Dial: SSHDialer(SSHOptions{Target: "srv", Binary: ssh}), Interval: 200 * time.Millisecond})
