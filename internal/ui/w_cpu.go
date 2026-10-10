@@ -36,7 +36,7 @@ var (
 )
 
 func (c *cpuWidget) Kind() string         { return "cpu" }
-func (c *cpuWidget) Collectors() []string { return []string{"cpu", "load"} }
+func (c *cpuWidget) Collectors() []string { return []string{"cpu", "load", "sensors"} }
 
 func (c *cpuWidget) Title(ctx *Context) (string, string) {
 	info := ""
@@ -49,7 +49,11 @@ func (c *cpuWidget) Title(ctx *Context) (string, string) {
 		}
 		info += metrics.FormatHertz(f)
 	}
-	return "cpu", fg(ctx.Theme.Dim, info)
+	info = fg(ctx.Theme.Dim, info)
+	if v, ok := ctx.Store.Last("cpu.temp"); ok {
+		info += " " + fg(ctx.Theme.Temp.At(v/100), metrics.Format(v, metrics.UnitCelsius))
+	}
+	return "cpu", info
 }
 
 // shortModel trims vendor noise from CPU model names.

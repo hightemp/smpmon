@@ -100,6 +100,9 @@ func (g *graphWidget) Render(ctx *Context, w, h int) []string {
 		legendRows = min(len(keys), max(h/3, 1))
 	}
 	gr := chart.Graph{Width: w, Height: h - legendRows, Mode: graphMode(ctx, g.opts.Mode), Min: g.opts.Min, Max: g.opts.Max}
+	if gr.Max <= gr.Min {
+		gr.Max = sharedMax(ctx, keys)
+	}
 	if g.opts.Scale == "log" {
 		gr.Scale = chart.ScaleLog
 	}
@@ -125,6 +128,10 @@ func (g *graphWidget) Render(ctx *Context, w, h int) []string {
 		}
 		gr.Series = append(gr.Series, chart.Series{Values: vals, Gradient: grd})
 	}
+	if gr.Max <= gr.Min { // auto scale with headroom so flat lines don't fill the graph
+		_, hi := gr.Range()
+		gr.Max = gr.Min + (hi-gr.Min)*1.25
+	}
 	out := gr.Render().Lines()
 	for i := 0; i < legendRows; i++ {
 		k := keys[i]
@@ -135,6 +142,20 @@ func (g *graphWidget) Render(ctx *Context, w, h int) []string {
 		out = append(out, line)
 	}
 	return block(out, w, h)
+}
+
+// sharedMax returns the natural maximum shared by all keys (e.g. 100 for
+// percentages), or 0 if they have none.
+func sharedMax(ctx *Context, keys []metrics.Key) float64 {
+	hi := 0.0
+	for i, k := range keys {
+		d := ctx.Registry.Lookup(k)
+		if d == nil || d.Max <= 0 || (i > 0 && d.Max != hi) {
+			return 0
+		}
+		hi = d.Max
+	}
+	return hi
 }
 
 // ---- gauge ----

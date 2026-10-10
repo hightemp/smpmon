@@ -15,7 +15,7 @@ general:
   border: rounded
   mouse: true
   # Dashboards shown as tabs (keys 1-9), in order. Empty shows all.
-  dashboards: [btop, minimal, procs, net, server]
+  dashboards: [btop, minimal, procs, net, server, hardware, containers]
   default_dashboard: btop
 
 # Per-collector settings: interval and enabled.
@@ -127,3 +127,44 @@ dashboards:
               options:
                 metrics: ["disk.io.*.read_bps", "disk.io.*.write_bps"]
             - widget: net
+
+  hardware:
+    title: Hardware
+    layout:
+      col:
+        - row:
+            - widget: gpu
+              weight: 2
+            - widget: sensors
+          weight: 2
+        - row:
+            - widget: graph
+              title: Temperatures
+              weight: 2
+              options:
+                metrics: [cpu.temp, "gpu.*.temp"]
+                min: 20
+                max: 100
+            - widget: battery
+            - widget: graph
+              title: GPU power
+              options:
+                metrics: ["gpu.*.power"]
+
+  containers:
+    title: Containers
+    layout:
+      col:
+        - widget: docker
+          weight: 2
+        - row:
+            - widget: graph
+              title: Container CPU
+              options:
+                metrics: ["docker.*.cpu"]
+                style: line
+            - widget: graph
+              title: Container memory
+              options:
+                metrics: ["docker.*.mem_used"]
+                style: line

@@ -22,7 +22,7 @@ import (
 
 // Collectors returns all gopsutil-based collectors.
 func Collectors() []collect.Collector {
-	return []collect.Collector{&CPU{}, &Load{}, &Mem{}, NewDisks(), NewNet(), NewProcs()}
+	return []collect.Collector{&CPU{}, &Load{}, &Mem{}, NewDisks(), NewNet(), NewProcs(), &Sensors{}, &Battery{}}
 }
 
 func delta(cur, prev uint64) uint64 {

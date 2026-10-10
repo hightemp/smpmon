@@ -5,22 +5,24 @@
 
 A terminal resource monitor in Go, inspired by [btop++](https://github.com/aristocratos/btop), built around **configurable dashboards** and **graphs**.
 
-> **Status:** early development. Linux is supported; macOS and Windows are planned.
+> **Status:** early development. Linux is the primary platform; macOS and Windows support is new and tested only in CI.
 
 ![smpmon showing the Overview dashboard](docs/screenshot.svg)
 
 ## Features
 
-- CPU (total and per core, frequency, load), memory and swap (including the ZFS ARC), filesystems, disk I/O, network and processes
+- CPU (total and per core, frequency, temperature, load), memory and swap (including the ZFS ARC), filesystems, disk I/O, network and processes
+- GPUs (NVIDIA through `nvidia-smi`, AMD and Intel through sysfs on Linux), temperature and fan sensors, batteries, and Docker containers
+- Linux, macOS and Windows
 - Dashboards described as a YAML layout tree of widgets, switchable with `1`–`9`, with size-dependent variants for narrow terminals
-- Built-in dashboards: `btop`, `minimal`, `procs`, `net`, `server`
+- Built-in dashboards: `btop`, `minimal`, `procs`, `net`, `server`, `hardware`, `containers`. Widgets whose data isn't available on the machine, such as a battery on a desktop, are hidden automatically
 - Graphs in braille, block or ASCII mode, with gradients, mirrored upload/download, and auto or log scale
 - Generic `graph`, `gauge`, `stat` and `table` widgets that show any metric by selector, such as `cpu.core.*.usage` or `net.*.*_bps`
 - A process table with configurable columns, sorting, filtering, a tree view, a details panel, signals and renice
 - Mouse support, built-in themes, and config hot reload
 - A single static binary with no cgo
 
-Planned: macOS and Windows, GPU, sensors, battery, Docker, an in-TUI layout editor, theme files, metric history, alerts, Prometheus export and remote agents.
+Planned: an in-TUI layout editor, theme files, rebindable keys, metric history, alerts, Prometheus export and remote agents.
 
 ## Install
 
@@ -31,6 +33,17 @@ go install github.com/hightemp/smpmon/cmd/smpmon@latest
 ```
 
 Prebuilt binaries and deb/rpm packages are published on the [Releases](https://github.com/hightemp/smpmon/releases) page.
+
+### Platform notes
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| CPU, memory, disks, network, processes | `/proc`, `/sys` | sysctl, libproc | Win32, NT API |
+| Temperatures | hwmon | SMC | WMI (often needs administrator rights) |
+| GPU | NVIDIA, AMD, Intel | — | NVIDIA |
+| Battery | sysfs | `pmset` | `GetSystemPowerStatus` |
+| Docker | socket | Docker Desktop, Colima | `DOCKER_HOST=tcp://…` only |
+| Process signals | all | all | terminate only |
 
 ## Usage
 
@@ -71,7 +84,7 @@ In the process widget:
 | `i` | renice |
 | `c` | show CPU per core or as a share of the whole machine |
 
-In the network widget, `b` and `n` switch the interface. Mouse: click a widget or tab to select it, click a column header to sort, use the wheel to scroll.
+In the network widget, `b` and `n` switch the interface. In the Docker widget, `←` `→` change the sort order and `a` shows stopped containers. Mouse: click a widget or tab to select it, click a column header to sort, use the wheel to scroll.
 
 ## Configuration
 
@@ -137,6 +150,10 @@ A layout node is one of `row` (children side by side), `col` (children stacked) 
 | `stat` | `metric`, `sparkline`, `gradient` |
 | `table` | `metrics` (selectors) |
 | `text` | `text` (with `{hostname}` `{os}` `{kernel}` `{uptime}` `{time}` `{date}`), `align` |
+| `gpu` | `index`, `mode` |
+| `sensors` | `filter`, `fans` (bool) |
+| `battery` | — |
+| `docker` | `all` (include stopped), `sort` (`cpu`, `mem`, `net` or `name`) |
 
 Process columns: `pid`, `ppid`, `name`, `cmd`, `user`, `state`, `threads`, `nice`, `cpu`, `mem`, `rss`, `vms`, `read`, `write`, `time`, `start`.
 
@@ -156,6 +173,10 @@ Metric keys are dot-separated. Selectors support `*` (one segment), `**` (any nu
 | `net.<if>.{rx_bps,tx_bps,rx_pps,tx_pps,rx_errs,tx_errs,rx_total,tx_total}` | bytes/s, 1/s, bytes |
 | `net.total.*` | sums over physical NICs |
 | `proc.{count,threads,running}`, `proc.<pid>.{cpu,mem}` | count, % |
+| `cpu.temp`, `sensors.<chip>.<label>.temp`, `sensors.<chip>.<label>.fan` | °C, RPM |
+| `gpu.<n>.{util,mem_util,mem_used_percent,fan}`, `gpu.<n>.{mem_used,mem_total}`, `gpu.<n>.temp`, `gpu.<n>.{power,power_limit}`, `gpu.<n>.{clock,mem_clock}` | %, bytes, °C, W, Hz |
+| `battery.{percent,power,time_left}` | %, W, s |
+| `docker.<name>.{cpu,mem_percent}`, `docker.<name>.{mem_used,mem_limit}`, `docker.<name>.{net_rx_bps,net_tx_bps,blk_read_bps,blk_write_bps}` | %, bytes, bytes/s |
 
 Dots inside a segment are escaped with a backslash, for example `disk.fs./mnt/data\.v2.used`.
 

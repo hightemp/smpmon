@@ -63,6 +63,7 @@ type Model struct {
 	width, height int
 	storeCh       <-chan struct{}
 	configCh      chan struct{}
+	unsupSig      string // unsupported collectors at the last layout
 	cancelWatch   context.CancelFunc
 	hostname      string
 }
@@ -164,6 +165,11 @@ func (m *Model) relayout() {
 	}
 	d := m.current()
 	d.root = d.cfg.LayoutFor(m.width, m.height-1)
+	unsup := m.unsupported()
+	m.unsupSig = fmt.Sprint(unsup)
+	if pruned := pruneUnsupported(d.root, d.widgets, unsup); pruned != nil {
+		d.root = pruned
+	}
 	d.places = layout.Compute(d.root, layout.Rect{X: 0, Y: 1, W: m.width, H: m.height - 1})
 	if m.focus >= len(d.places) {
 		m.focus = 0
@@ -175,6 +181,47 @@ func (m *Model) relayout() {
 		m.zoom = false
 	}
 	m.updateDemand()
+}
+
+// unsupported returns the collectors that can't run on this machine.
+func (m *Model) unsupported() map[string]bool {
+	out := map[string]bool{}
+	for _, st := range m.opts.Source.Status() {
+		if st.State == source.StateUnsupported {
+			out[st.Name] = true
+		}
+	}
+	return out
+}
+
+// pruneUnsupported returns a copy of the layout without widgets whose data
+// sources are all unavailable here (a battery widget on a desktop, a GPU
+// widget without a GPU), so their space goes to the others. It returns nil
+// if nothing would be left.
+func pruneUnsupported(n *config.Node, widgets map[*config.Node]Widget, unsup map[string]bool) *config.Node {
+	if n.Dir == config.DirNone {
+		cs := widgets[n].Collectors()
+		if len(cs) == 0 {
+			return n
+		}
+		for _, c := range cs {
+			if !unsup[c] {
+				return n
+			}
+		}
+		return nil
+	}
+	cp := *n
+	cp.Children = nil
+	for _, c := range n.Children {
+		if pc := pruneUnsupported(c, widgets, unsup); pc != nil {
+			cp.Children = append(cp.Children, pc)
+		}
+	}
+	if len(cp.Children) == 0 {
+		return nil
+	}
+	return &cp
 }
 
 func (m *Model) defaultFocus() int {
@@ -281,6 +328,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case storeMsg:
+		// Collectors report "unsupported" asynchronously after start.
+		if fmt.Sprint(m.unsupported()) != m.unsupSig {
+			m.relayout()
+		}
 		return m, m.waitStore()
 
 	case configMsg:
@@ -564,10 +615,24 @@ func (m *Model) drawWidget(screen [][]segment, w Widget, n *config.Node, r layou
 	}
 }
 
+// tabLabels returns the tab bar labels. When the full labels would leave
+// less than minRight cells for the right side of the bar, inactive tabs
+// show only their number.
 func (m *Model) tabLabels() []string {
+	const minRight = 12
 	labels := make([]string, len(m.dashboards))
+	total := 0
 	for i, d := range m.dashboards {
 		labels[i] = " " + strconv.Itoa(i+1) + " " + d.title + " "
+		total += width(labels[i])
+	}
+	if total+minRight <= m.width {
+		return labels
+	}
+	for i := range labels {
+		if i != m.active {
+			labels[i] = " " + strconv.Itoa(i+1) + " "
+		}
 	}
 	return labels
 }

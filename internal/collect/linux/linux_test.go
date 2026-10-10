@@ -4,6 +4,7 @@ package linux
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -354,6 +355,10 @@ func TestLiveSystem(t *testing.T) {
 	}
 	for _, c := range Collectors() {
 		if err := c.Init(); err != nil {
+			if errors.Is(err, collect.ErrUnsupported) {
+				t.Logf("%s: %v", c.Name(), err)
+				continue
+			}
 			t.Fatalf("%s init: %v", c.Name(), err)
 		}
 		t0 := time.Now()
@@ -394,5 +399,93 @@ func TestFieldsAndPIDs(t *testing.T) {
 		if _, ok := parsePID([]byte(bad)); ok {
 			t.Errorf("parsePID(%q) accepted", bad)
 		}
+	}
+}
+
+func TestSensors(t *testing.T) {
+	f := newFixture(t)
+	f.sys("class/hwmon/hwmon0/name", "coretemp\n")
+	f.sys("class/hwmon/hwmon0/temp1_input", "52000\n")
+	f.sys("class/hwmon/hwmon0/temp1_label", "Package id 0\n")
+	f.sys("class/hwmon/hwmon0/temp1_max", "80000\n")
+	f.sys("class/hwmon/hwmon0/temp1_crit", "100000\n")
+	f.sys("class/hwmon/hwmon0/temp2_input", "48000\n")
+	f.sys("class/hwmon/hwmon0/temp2_label", "Core 0\n")
+	f.sys("class/hwmon/hwmon1/name", "nvme\n")
+	f.sys("class/hwmon/hwmon1/temp1_input", "38850\n")
+	f.sys("class/hwmon/hwmon1/temp1_label", "Composite\n")
+	f.sys("class/hwmon/hwmon2/name", "nvme\n")
+	f.sys("class/hwmon/hwmon2/temp1_input", "40000\n")
+	f.sys("class/hwmon/hwmon3/name", "it8628\n")
+	f.sys("class/hwmon/hwmon3/fan1_input", "1200\n")
+
+	s := NewSensors(f.fs)
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sm := collectAt(t, s, time.Now())
+	if v := value(t, sm, "cpu.temp"); v != 52 {
+		t.Errorf("cpu.temp %v", v)
+	}
+	if v := value(t, sm, metrics.NewKey("sensors", "nvme", "Composite", "temp")); v != 38.85 {
+		t.Errorf("nvme %v", v)
+	}
+	if v := value(t, sm, metrics.NewKey("sensors", "nvme-1", "temp1", "temp")); v != 40 {
+		t.Errorf("second nvme %v", v)
+	}
+	if v := value(t, sm, metrics.NewKey("sensors", "it8628", "fan1", "fan")); v != 1200 {
+		t.Errorf("fan %v", v)
+	}
+	table := sm.Tables[collect.TableSensors].([]collect.Sensor)
+	if table[0].Chip != "coretemp" || table[0].Label != "Core 0" || table[1].High != 80 || table[1].Crit != 100 {
+		t.Errorf("table %+v", table[:2])
+	}
+
+	if err := NewSensors(newFixture(t).fs).Init(); !errors.Is(err, collect.ErrUnsupported) {
+		t.Errorf("no hwmon: %v", err)
+	}
+}
+
+func TestBattery(t *testing.T) {
+	f := newFixture(t)
+	f.sys("class/power_supply/AC/type", "Mains\n")
+	f.sys("class/power_supply/BAT0/type", "Battery\n")
+	f.sys("class/power_supply/BAT0/status", "Discharging\n")
+	f.sys("class/power_supply/BAT0/capacity", "50\n")
+	f.sys("class/power_supply/BAT0/energy_now", "25000000\n")
+	f.sys("class/power_supply/BAT0/energy_full", "50000000\n")
+	f.sys("class/power_supply/BAT0/power_now", "10000000\n")
+	f.sys("class/power_supply/hidpp_battery_0/type", "Battery\n")
+	f.sys("class/power_supply/hidpp_battery_0/scope", "Device\n")
+
+	b := NewBattery(f.fs)
+	if err := b.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.bats) != 1 {
+		t.Fatalf("batteries %v (mouse battery must be skipped)", b.bats)
+	}
+	sm := collectAt(t, b, time.Now())
+	if value(t, sm, "battery.percent") != 50 || value(t, sm, "battery.power") != 10 ||
+		value(t, sm, "battery.time_left") != 2.5*3600 {
+		t.Fatalf("points %v", sm.Points)
+	}
+
+	// Charge-based driver while charging.
+	f.sys("class/power_supply/BAT0/status", "Charging\n")
+	for _, n := range []string{"energy_now", "energy_full", "power_now"} {
+		_ = os.Remove(filepath.Join(f.fs.Sys, "class/power_supply/BAT0", n))
+	}
+	f.sys("class/power_supply/BAT0/charge_now", "2000000\n")
+	f.sys("class/power_supply/BAT0/charge_full", "4000000\n")
+	f.sys("class/power_supply/BAT0/current_now", "-1000000\n")
+	f.sys("class/power_supply/BAT0/voltage_now", "12000000\n")
+	sm = collectAt(t, b, time.Now())
+	if value(t, sm, "battery.power") != 12 || value(t, sm, "battery.time_left") != 2*3600 {
+		t.Fatalf("charge points %v", sm.Points)
+	}
+
+	if err := NewBattery(newFixture(t).fs).Init(); !errors.Is(err, collect.ErrUnsupported) {
+		t.Errorf("no battery: %v", err)
 	}
 }

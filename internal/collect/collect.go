@@ -50,3 +50,9 @@ type ProcessController interface {
 	// SetNice changes the scheduling priority (-20..19 on Unix).
 	SetNice(pid int32, nice int) error
 }
+
+// Closer can be implemented by collectors that hold resources such as child
+// processes; Close is called when the source stops.
+type Closer interface {
+	Close() error
+}

@@ -24,10 +24,22 @@ import "github.com/hightemp/smpmon/internal/metrics"
 //	net.total.{rx_bps,tx_bps,rx_total,tx_total}  sums over physical NICs
 //	proc.count, proc.threads, proc.running       count
 //	proc.<pid>.{cpu,mem}                         percent
+//	cpu.temp, sensors.<chip>.<label>.temp        °C
+//	sensors.<chip>.<label>.fan                   RPM
+//	gpu.<n>.{util,mem_util,mem_used_percent,fan} percent
+//	gpu.<n>.{mem_used,mem_total}                 bytes
+//	gpu.<n>.temp                                 °C
+//	gpu.<n>.{power,power_limit}                  W
+//	gpu.<n>.{clock,mem_clock}                    Hz
+//	battery.{percent}, battery.power, battery.time_left  %, W, s
+//	docker.<name>.{cpu,mem_percent}              percent
+//	docker.<name>.{mem_used,mem_limit}           bytes
+//	docker.<name>.{net_rx_bps,net_tx_bps,blk_read_bps,blk_write_bps}  bytes/s
 func init() {
 	metrics.DefaultRegistry.Register(
 		metrics.Desc{Pattern: "cpu.**.freq", Unit: metrics.UnitHertz, Help: "CPU frequency"},
 		metrics.Desc{Pattern: "cpu.freq", Unit: metrics.UnitHertz, Help: "Average CPU frequency"},
+		metrics.Desc{Pattern: "cpu.temp", Unit: metrics.UnitCelsius, Max: 100, Help: "CPU temperature"},
 		metrics.Desc{Pattern: "cpu.**", Unit: metrics.UnitPercent, Max: 100, Help: "CPU usage"},
 		metrics.Desc{Pattern: "load.*", Unit: metrics.UnitNone, Help: "Load average"},
 		metrics.Desc{Pattern: "system.uptime", Unit: metrics.UnitSeconds, Help: "Uptime"},
@@ -46,5 +58,21 @@ func init() {
 		metrics.Desc{Pattern: "proc.*.cpu", Unit: metrics.UnitPercent, Help: "Process CPU"},
 		metrics.Desc{Pattern: "proc.*.mem", Unit: metrics.UnitPercent, Max: 100, Help: "Process memory"},
 		metrics.Desc{Pattern: "proc.*", Unit: metrics.UnitCount, Help: "Process counts"},
+		metrics.Desc{Pattern: "sensors.**.temp", Unit: metrics.UnitCelsius, Max: 100, Help: "Temperature"},
+		metrics.Desc{Pattern: "sensors.**.fan", Unit: metrics.UnitRPM, Help: "Fan speed"},
+		metrics.Desc{Pattern: "gpu.*.temp", Unit: metrics.UnitCelsius, Max: 100, Help: "GPU temperature"},
+		metrics.Desc{Pattern: "gpu.*.mem_used", Unit: metrics.UnitBytes, Help: "GPU memory used"},
+		metrics.Desc{Pattern: "gpu.*.mem_total", Unit: metrics.UnitBytes, Help: "GPU memory"},
+		metrics.Desc{Pattern: "gpu.*.power*", Unit: metrics.UnitWatts, Help: "GPU power"},
+		metrics.Desc{Pattern: "gpu.*.*clock", Unit: metrics.UnitHertz, Help: "GPU clock"},
+		metrics.Desc{Pattern: "gpu.*.*", Unit: metrics.UnitPercent, Max: 100, Help: "GPU utilization"},
+		metrics.Desc{Pattern: "battery.percent", Unit: metrics.UnitPercent, Max: 100, Help: "Battery charge"},
+		metrics.Desc{Pattern: "battery.power", Unit: metrics.UnitWatts, Help: "Battery power"},
+		metrics.Desc{Pattern: "battery.time_left", Unit: metrics.UnitSeconds, Help: "Battery time left"},
+		metrics.Desc{Pattern: "docker.*.mem_used", Unit: metrics.UnitBytes, Help: "Container memory"},
+		metrics.Desc{Pattern: "docker.*.mem_limit", Unit: metrics.UnitBytes, Help: "Container memory limit"},
+		metrics.Desc{Pattern: "docker.*.*_bps", Unit: metrics.UnitBytesPerSec, Help: "Container I/O"},
+		metrics.Desc{Pattern: "docker.*.mem_percent", Unit: metrics.UnitPercent, Max: 100, Help: "Container memory"},
+		metrics.Desc{Pattern: "docker.*.cpu", Unit: metrics.UnitPercent, Help: "Container CPU (100 = one core)"},
 	)
 }

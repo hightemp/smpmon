@@ -41,8 +41,7 @@ func newFrameCommand(opts *rootOptions) *cobra.Command {
 				Store:     metrics.DefaultStoreOptions(),
 			}, platform.Collectors())
 			ctx, cancel := context.WithCancel(cmd.Context())
-			defer cancel()
-			go func() { _ = src.Run(ctx) }()
+			defer stopSource(cancel, startSource(ctx, src))
 
 			m, err := ui.New(ui.Options{Config: cfg, Source: src, Procs: platform.ProcessController(), Dashboard: opts.dashboard})
 			if err != nil {
@@ -54,6 +53,8 @@ func newFrameCommand(opts *rootOptions) *cobra.Command {
 				return ctx.Err()
 			case <-time.After(wait):
 			}
+			// Re-layout now that collectors have reported what's supported.
+			m.Update(tea.WindowSizeMsg{Width: w, Height: h})
 			_, err = fmt.Fprintln(cmd.OutOrStdout(), m.View().Content)
 			return err
 		},

@@ -167,6 +167,13 @@ func (l *Local) defaultOverride(c collect.Collector) {
 
 func (l *Local) runCollector(ctx context.Context, c collect.Collector) {
 	name := c.Name()
+	if cl, ok := c.(collect.Closer); ok {
+		defer func() {
+			if err := cl.Close(); err != nil {
+				slog.Debug("collector close", "collector", name, "err", err)
+			}
+		}()
+	}
 	if err := safeCall(c.Init); err != nil {
 		state := StateError
 		if errors.Is(err, collect.ErrUnsupported) {

@@ -38,6 +38,8 @@ func Collectors() []collect.Collector {
 		NewDisks(DefaultFS),
 		NewNet(DefaultFS),
 		NewProcs(DefaultFS),
+		NewSensors(DefaultFS),
+		NewBattery(DefaultFS),
 	}
 }
 

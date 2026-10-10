@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"time"
 
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/collect/platform"
@@ -36,8 +37,7 @@ func runTUI(ctx context.Context, opts *rootOptions) error {
 	}, collectors)
 
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go func() { _ = src.Run(ctx) }()
+	defer stopSource(cancel, startSource(ctx, src))
 
 	// Only watch a config file that exists; a missing default is fine.
 	watch := ""
@@ -51,4 +51,25 @@ func runTUI(ctx context.Context, opts *rootOptions) error {
 		Procs:      platform.ProcessController(),
 		Dashboard:  opts.dashboard,
 	})
+}
+
+// startSource runs src in the background and returns a channel closed when
+// it has stopped.
+func startSource(ctx context.Context, src source.Source) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = src.Run(ctx)
+	}()
+	return done
+}
+
+// stopSource cancels the source and waits briefly for collectors to clean
+// up (e.g. stop nvidia-smi).
+func stopSource(cancel context.CancelFunc, done <-chan struct{}) {
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+	}
 }

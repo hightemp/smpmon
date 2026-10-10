@@ -103,6 +103,17 @@ func collectorsFor(patterns []string) []string {
 		switch first {
 		case "cpu":
 			add("cpu")
+			if strings.HasPrefix(p, "cpu.temp") {
+				add("sensors")
+			}
+		case "sensors":
+			add("sensors")
+		case "gpu":
+			add("gpu")
+		case "battery":
+			add("battery")
+		case "docker":
+			add("docker")
 		case "load", "system":
 			add("load")
 		case "mem", "swap":

@@ -233,3 +233,33 @@ func TestTopBarDegrades(t *testing.T) {
 		t.Fatalf("help should fit without status: %q", bar)
 	}
 }
+
+func TestPruneUnsupported(t *testing.T) {
+	var root config.Node
+	if err := yaml.Unmarshal([]byte("row:\n  - widget: battery\n  - col:\n      - widget: gpu\n      - widget: cpu\n"), &root); err != nil {
+		t.Fatal(err)
+	}
+	widgets := map[*config.Node]Widget{}
+	for _, n := range root.Widgets() {
+		w, err := newWidget(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		widgets[n] = w
+	}
+	p := pruneUnsupported(&root, widgets, map[string]bool{"battery": true, "gpu": true})
+	got := p.Widgets()
+	if len(got) != 1 || got[0].Widget != "cpu" {
+		t.Fatalf("kept %v", got)
+	}
+	if len(root.Widgets()) != 3 {
+		t.Fatal("original layout modified")
+	}
+	// cpu also uses sensors; it stays while cpu itself is supported.
+	if p := pruneUnsupported(&root, widgets, map[string]bool{"sensors": true}); len(p.Widgets()) != 3 {
+		t.Fatal("widget with a supported collector was removed")
+	}
+	if pruneUnsupported(&root, widgets, map[string]bool{"battery": true, "gpu": true, "cpu": true, "load": true, "sensors": true}) != nil {
+		t.Fatal("expected nil when nothing is left")
+	}
+}

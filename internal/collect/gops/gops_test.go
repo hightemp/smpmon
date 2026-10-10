@@ -2,6 +2,7 @@ package gops
 
 import (
 	"context"
+	"errors"
 	"runtime"
 	"testing"
 	"time"
@@ -30,6 +31,10 @@ func TestLive(t *testing.T) {
 	}
 	for _, c := range Collectors() {
 		if err := c.Init(); err != nil {
+			if errors.Is(err, collect.ErrUnsupported) {
+				t.Logf("%s: %v", c.Name(), err)
+				continue
+			}
 			t.Fatalf("%s init: %v", c.Name(), err)
 		}
 		t0 := time.Now()
@@ -126,5 +131,24 @@ func TestHelpers(t *testing.T) {
 	}
 	if rate(10, 20, time.Second) != 0 || rate(30, 10, 2*time.Second) != 10 {
 		t.Fatal("rate")
+	}
+}
+
+func TestParsePmset(t *testing.T) {
+	out := "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=4653155)\t85%; discharging; 4:12 remaining present: true\n"
+	bats := parsePmset(out)
+	if len(bats) != 1 || bats[0].Percent != 85 || bats[0].Status != "discharging" || bats[0].TimeLeft != 4*time.Hour+12*time.Minute {
+		t.Fatalf("%+v", bats)
+	}
+	bats = parsePmset(" -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true\n")
+	if len(bats) != 1 || bats[0].Status != "full" || bats[0].TimeLeft != 0 {
+		t.Fatalf("%+v", bats)
+	}
+	bats = parsePmset(" -InternalBattery-0 (id=1)\t40%; charging; (no estimate) present: true\n")
+	if len(bats) != 1 || bats[0].Status != "charging" || bats[0].TimeLeft != 0 {
+		t.Fatalf("%+v", bats)
+	}
+	if bats := parsePmset("Now drawing from 'AC Power'\n"); len(bats) != 0 {
+		t.Fatalf("desktop: %+v", bats)
 	}
 }
