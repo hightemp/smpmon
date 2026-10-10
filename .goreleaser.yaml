@@ -19,9 +19,7 @@ builds:
       - -X github.com/hightemp/smpmon/internal/buildinfo.Version={{ .Version }}
       - -X github.com/hightemp/smpmon/internal/buildinfo.Commit={{ .ShortCommit }}
       - -X github.com/hightemp/smpmon/internal/buildinfo.Date={{ .Date }}
-    # macOS and Windows are added once their collectors exist (v1); CI
-    # still cross-compiles them on every push.
-    goos: [linux]
+    goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
 
 archives:
