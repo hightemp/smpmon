@@ -290,4 +290,3 @@ func (s *Store) notify() {
 		}
 	}
 }
-

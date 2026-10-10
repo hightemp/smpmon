@@ -6,9 +6,9 @@ package collect
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
-	"errors"
 	"time"
 
 	"github.com/hightemp/smpmon/internal/metrics"
@@ -99,4 +99,3 @@ func CollectorsFor(patterns []string) []string {
 	}
 	return out
 }
-
