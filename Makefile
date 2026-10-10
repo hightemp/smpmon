@@ -98,3 +98,7 @@ release: ## Commit VERSION, tag v$(VERSION) and push (triggers the GitHub releas
 	git push $(REMOTE) "$(RELEASE_BRANCH)"; \
 	git push $(REMOTE) "$(TAG)"; \
 	echo "pushed $(TAG)"
+
+.PHONY: screenshot
+screenshot: build ## Regenerate docs/screenshot.svg from a live frame (takes ~1 min)
+	./bin/$(BINARY) frame --width 160 --height 48 --interval 500ms --wait 60s | scripts/ansi2svg.py > docs/screenshot.svg

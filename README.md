@@ -7,6 +7,8 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 
 > **Status:** early development. Linux is supported; macOS and Windows are planned.
 
+![smpmon showing the Overview dashboard](docs/screenshot.svg)
+
 ## Features
 
 - CPU (total and per core, frequency, load), memory and swap (including the ZFS ARC), filesystems, disk I/O, network and processes

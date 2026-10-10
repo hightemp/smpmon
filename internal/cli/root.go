@@ -82,7 +82,7 @@ func NewRootCommand() *cobra.Command {
 	_ = f.MarkHidden("cpuprofile")
 	cmd.Flags().StringVarP(&opts.dashboard, "dashboard", "d", "", "dashboard to open on start")
 
-	cmd.AddCommand(newVersionCommand(), newSnapshotCommand(), newConfigCommand(opts))
+	cmd.AddCommand(newVersionCommand(), newSnapshotCommand(), newConfigCommand(opts), newFrameCommand(opts))
 	return cmd
 }
 
