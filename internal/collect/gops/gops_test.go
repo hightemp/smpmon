@@ -37,7 +37,11 @@ func TestLive(t *testing.T) {
 		if err := c.Collect(context.Background(), &s); err != nil {
 			t.Fatalf("%s: %v", c.Name(), err)
 		}
-		time.Sleep(300 * time.Millisecond)
+		gap := 300 * time.Millisecond
+		if c.Name() == "cpu" {
+			gap = time.Second // CPU tick counters update coarsely on some systems
+		}
+		time.Sleep(gap)
 		s = metrics.Sample{Time: time.Now()}
 		start := time.Now()
 		if err := c.Collect(context.Background(), &s); err != nil {
@@ -66,12 +70,12 @@ func TestLive(t *testing.T) {
 			}
 			self := false
 			for _, p := range procs {
-				if int(p.PID) == pidSelf() && p.Name != "" && p.RSS > 0 {
+				if int(p.PID) == pidSelf() && p.Name != "" && p.RSS > 0 && p.Threads > 0 && !p.StartTime.IsZero() {
 					self = true
 				}
 			}
 			if !self {
-				t.Errorf("own process not found with name and RSS")
+				t.Errorf("own process not found with name, RSS, threads and start time")
 			}
 		case "disks":
 			if fss := s.Tables[collect.TableFilesystems].([]collect.Filesystem); len(fss) == 0 {
