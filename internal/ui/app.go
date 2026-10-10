@@ -70,9 +70,15 @@ type Model struct {
 	edit     *editor   // layout editor, nil when not editing
 	hist     *histView // shown history window, nil when live
 	alertSeq uint64    // last alert event shown as a toast
-	alerted  map[string]map[string]alert.Level
-	status   string
-	statusAt time.Time
+	// cache is the last rendered frame; skipRender reuses it when a
+	// heartbeat had nothing new to show.
+	cache      string
+	skipRender bool
+	lastRender time.Time
+	connSig    string // connection states at the last heartbeat
+	alerted    map[string]map[string]alert.Level
+	status     string
+	statusAt   time.Time
 
 	width, height int
 	hosts         []HostSource
@@ -423,11 +429,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case heartbeatMsg:
 		// Redraw for the clock and connection states, and re-layout when
-		// collectors report what's unsupported.
+		// collectors report what's unsupported. While data arrives every
+		// second those redraws happen anyway, so the heartbeat skips its own.
+		changed := false
 		if fmt.Sprint(m.unsupported()) != m.unsupSig {
 			m.relayout()
+			changed = true
 		}
-		m.pollAlerts()
+		if m.pollAlerts() {
+			changed = true
+		}
+		if sig := m.connSignature(); sig != m.connSig {
+			m.connSig, changed = sig, true
+		}
+		m.skipRender = !changed && time.Since(m.lastRender) < 1500*time.Millisecond
 		return m, heartbeat()
 
 	case themeMsg:
@@ -454,11 +469,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// connSignature summarizes the hosts' connection states.
+func (m *Model) connSignature() string {
+	var b strings.Builder
+	for _, h := range m.hosts {
+		info, _ := h.conn()
+		b.WriteString(info.State.String())
+	}
+	return b.String()
+}
+
 // pollAlerts shows new alert events as toasts and refreshes which widgets
 // to highlight.
-func (m *Model) pollAlerts() {
+func (m *Model) pollAlerts() bool {
 	if m.opts.Alerts == nil {
-		return
+		return false
 	}
 	evs, seq := m.opts.Alerts.Events(m.alertSeq)
 	m.alertSeq = seq
@@ -472,6 +497,7 @@ func (m *Model) pollAlerts() {
 		}
 	}
 	m.alerted = alertedCollectors(m.opts.Alerts)
+	return len(evs) > 0
 }
 
 func firstLine(s string) string {
@@ -679,8 +705,15 @@ func (m *Model) View() tea.View {
 		v.SetContent(m.frozen)
 		return v
 	}
+	if m.skipRender && m.cache != "" {
+		m.skipRender = false
+		v.SetContent(m.cache)
+		return v
+	}
+	m.skipRender = false
 	m.ctx.Now = time.Now()
 	content := m.render()
+	m.cache, m.lastRender = content, time.Now()
 	if m.paused {
 		m.frozen = content
 	}
