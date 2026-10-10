@@ -26,10 +26,19 @@ jobs:
           go-version-file: go.mod
       - name: Test
         run: go test ./...
+      - name: Release notes
+        id: notes
+        run: |
+          f="release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then
+            echo "args=--release-notes=$f" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::$f not found, falling back to the commit list"
+          fi
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional: lets GoReleaser update hightemp/homebrew-tap and

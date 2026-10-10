@@ -86,13 +86,15 @@ release: ## Commit VERSION, tag v$(VERSION) and push (triggers the GitHub releas
 	branch=$$(git rev-parse --abbrev-ref HEAD); \
 	if [ "$$branch" != "$(RELEASE_BRANCH)" ]; then \
 		echo "releases must be made from '$(RELEASE_BRANCH)' (current: $$branch)"; exit 1; fi; \
-	if [ -n "$$(git status --porcelain -- . ':(exclude)VERSION')" ]; then \
-		echo "working tree has uncommitted changes besides VERSION"; exit 1; fi; \
+	if [ -n "$$(git status --porcelain -- . ':(exclude)VERSION' ':(exclude)release-notes')" ]; then \
+		echo "working tree has uncommitted changes besides VERSION and release notes"; exit 1; fi; \
+	if [ ! -f "release-notes/$(TAG).md" ]; then \
+		echo "write release-notes/$(TAG).md first (it becomes the GitHub release description)"; exit 1; fi; \
 	if git rev-parse -q --verify "refs/tags/$(TAG)" >/dev/null; then \
 		echo "tag $(TAG) already exists locally"; exit 1; fi; \
 	if git ls-remote --exit-code --tags $(REMOTE) "refs/tags/$(TAG)" >/dev/null 2>&1; then \
 		echo "tag $(TAG) already exists on $(REMOTE)"; exit 1; fi; \
-	git add VERSION; \
+	git add VERSION "release-notes/$(TAG).md"; \
 	if ! git diff --cached --quiet; then git commit -m "Release $(TAG)"; fi; \
 	git tag -a "$(TAG)" -m "Release $(TAG)"; \
 	git push $(REMOTE) "$(RELEASE_BRANCH)"; \

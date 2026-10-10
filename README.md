@@ -261,9 +261,10 @@ make help       # list all targets
 
 The release version lives in the `VERSION` file.
 
-1. Bump `VERSION`, for example `0.2.0`.
-2. Run `make release`. It checks that you're on `main` with a clean tree, commits `VERSION`, creates the `v<VERSION>` tag and pushes the branch and the tag.
-3. The `Release` GitHub workflow runs GoReleaser and publishes binaries, checksums and deb/rpm packages. If the `TAP_GITHUB_TOKEN` secret is set (a token with write access to `hightemp/homebrew-tap` and `hightemp/scoop-bucket`), it also updates the Homebrew cask and the Scoop manifest.
+1. Bump `VERSION`, for example `1.1.0`.
+2. Write `release-notes/v<VERSION>.md`. It becomes the description of the GitHub release.
+3. Run `make release`. It checks that you're on `main` with no other uncommitted changes and that the notes exist, commits `VERSION` and the notes, creates the `v<VERSION>` tag and pushes the branch and the tag.
+4. The `Release` GitHub workflow runs GoReleaser and publishes binaries, checksums and deb/rpm packages. If the `TAP_GITHUB_TOKEN` secret is set (a token with write access to `hightemp/homebrew-tap` and `hightemp/scoop-bucket`), it also updates the Homebrew cask and the Scoop manifest.
 
 ## License
 
