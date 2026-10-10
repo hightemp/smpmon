@@ -27,6 +27,19 @@ Planned: metric history, alerts, Prometheus export and remote agents.
 
 ## Install
 
+Homebrew (macOS, Linux):
+
+```sh
+brew install --cask hightemp/tap/smpmon
+```
+
+Scoop (Windows):
+
+```powershell
+scoop bucket add hightemp https://github.com/hightemp/scoop-bucket
+scoop install smpmon
+```
+
 From source (requires Go 1.26+):
 
 ```sh
@@ -250,7 +263,7 @@ The release version lives in the `VERSION` file.
 
 1. Bump `VERSION`, for example `0.2.0`.
 2. Run `make release`. It checks that you're on `main` with a clean tree, commits `VERSION`, creates the `v<VERSION>` tag and pushes the branch and the tag.
-3. The `Release` GitHub workflow runs GoReleaser and publishes binaries, checksums and deb/rpm packages.
+3. The `Release` GitHub workflow runs GoReleaser and publishes binaries, checksums and deb/rpm packages. If the `TAP_GITHUB_TOKEN` secret is set (a token with write access to `hightemp/homebrew-tap` and `hightemp/scoop-bucket`), it also updates the Homebrew cask and the Scoop manifest.
 
 ## License
 

@@ -45,6 +45,47 @@ nfpms:
     license: MIT
     formats: [deb, rpm]
 
+# Package manager manifests go to separate repositories. Pushing there
+# needs a token with write access (secret TAP_GITHUB_TOKEN); without it the
+# release still succeeds and the manifests are just not updated.
+homebrew_casks:
+  - name: smpmon
+    repository:
+      owner: hightemp
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/hightemp/smpmon
+    description: A configurable terminal resource monitor with dashboards and graphs.
+    license: MIT
+    binaries: [smpmon]
+    commit_author:
+      name: hightemp
+      email: a01028536640@gmail.com
+    skip_upload: '{{ if index .Env "TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
+    hooks:
+      post:
+        # The binary isn't notarized; drop the quarantine flag so macOS runs it.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/smpmon"]
+          end
+
+scoops:
+  - name: smpmon
+    repository:
+      owner: hightemp
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/hightemp/smpmon
+    description: A configurable terminal resource monitor with dashboards and graphs.
+    license: MIT
+    commit_author:
+      name: hightemp
+      email: a01028536640@gmail.com
+    skip_upload: '{{ if index .Env "TAP_GITHUB_TOKEN" }}false{{ else }}true{{ end }}'
+
 changelog:
   use: github
   sort: asc
