@@ -39,9 +39,11 @@ func TestLive(t *testing.T) {
 		}
 		time.Sleep(300 * time.Millisecond)
 		s = metrics.Sample{Time: time.Now()}
+		start := time.Now()
 		if err := c.Collect(context.Background(), &s); err != nil {
 			t.Fatalf("%s: %v", c.Name(), err)
 		}
+		took := time.Since(start)
 		got := map[metrics.Key]float64{}
 		for _, p := range s.Points {
 			got[p.Key] = p.Value
@@ -76,7 +78,7 @@ func TestLive(t *testing.T) {
 				t.Errorf("no filesystems")
 			}
 		}
-		t.Logf("%s: %d points", c.Name(), len(s.Points))
+		t.Logf("%s: %d points in %v", c.Name(), len(s.Points), took)
 	}
 }
 

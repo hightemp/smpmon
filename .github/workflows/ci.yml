@@ -33,6 +33,8 @@ jobs:
           go-version-file: go.mod
       - name: Test
         run: go test ./...
+      - name: Collector timings
+        run: go test -run TestLive -v ./internal/collect/gops/
       - name: Test (race)
         if: runner.os == 'Linux'
         run: go test -race ./...

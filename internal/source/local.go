@@ -16,6 +16,9 @@ import (
 // MinInterval is the smallest allowed collection interval.
 const MinInterval = 100 * time.Millisecond
 
+// collectTimeout is the minimum time a single collection may take.
+const collectTimeout = 10 * time.Second
+
 // LocalOptions configures a Local source.
 type LocalOptions struct {
 	// Interval is the base collection interval (default 1s).
@@ -217,7 +220,9 @@ func nextTick(t time.Time, interval time.Duration) time.Time {
 }
 
 func (l *Local) collectOnce(ctx context.Context, c collect.Collector, interval time.Duration) {
-	cctx, cancel := context.WithTimeout(ctx, max(interval, time.Second))
+	// The timeout only guards against hung collectors; a slow but working
+	// one (a process sweep on macOS can take over a second) must finish.
+	cctx, cancel := context.WithTimeout(ctx, max(2*interval, collectTimeout))
 	defer cancel()
 	sample := metrics.Sample{Time: time.Now()}
 	start := time.Now()
