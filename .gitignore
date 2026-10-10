@@ -1,0 +1,16 @@
+# Planning docs (kept local)
+/PRD.md
+/TASKS.md
+
+# Build output
+/bin/
+/dist/
+coverage.out
+*.test
+*.prof
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
