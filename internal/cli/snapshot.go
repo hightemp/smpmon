@@ -70,7 +70,9 @@ func takeSnapshot(ctx context.Context, cs []collect.Collector, interval time.Dur
 	var active []collect.Collector
 	for _, c := range cs {
 		if err := c.Init(); err != nil {
-			snap.Errors[c.Name()] = err.Error()
+			if !errors.Is(err, collect.ErrUnsupported) { // e.g. no battery: not an error
+				snap.Errors[c.Name()] = err.Error()
+			}
 			continue
 		}
 		active = append(active, c)
