@@ -15,6 +15,11 @@ linters:
     - unconvert
     - unparam
     - whitespace
+  settings:
+    errcheck:
+      # Closing read-only files cannot lose data.
+      exclude-functions:
+        - (*os.File).Close
 
 formatters:
   enable:

@@ -67,7 +67,7 @@ func NewRootCommand() *cobra.Command {
 	f.BoolVar(&opts.debug, "debug", false, "enable debug logging")
 	cmd.Flags().StringVarP(&opts.dashboard, "dashboard", "d", "", "dashboard to open on start")
 
-	cmd.AddCommand(newVersionCommand())
+	cmd.AddCommand(newVersionCommand(), newSnapshotCommand())
 	return cmd
 }
 

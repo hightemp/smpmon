@@ -47,6 +47,11 @@ func TestSelector(t *testing.T) {
 		{`disk.fs./mnt/data\.v2.*`, NewKey("disk", "fs", "/mnt/data.v2", "used"), true},
 		{`x.\*`, "x.y", false},
 		{`x.\*`, NewKey("x", "*"), true},
+		{"net.*.*_bps", "net.eth0.rx_bps", true},
+		{"net.*.*_bps", "net.eth0.rx_pps", false},
+		{"net.eth?.**", "net.eth1.rx", true},
+		{"disk.io.sd[ab].util", "disk.io.sdb.util", true},
+		{"disk.io.sd[ab].util", "disk.io.sdc.util", false},
 	}
 	for _, c := range cases {
 		sel, err := ParseSelector(c.pat)
@@ -57,7 +62,7 @@ func TestSelector(t *testing.T) {
 			t.Errorf("%s ~ %s: got %v want %v", c.pat, c.key, got, c.want)
 		}
 	}
-	for _, bad := range []string{"", "a..b", ".a"} {
+	for _, bad := range []string{"", "a..b", ".a", "a.[x"} {
 		if _, err := ParseSelector(bad); err == nil {
 			t.Errorf("expected error for %q", bad)
 		}
@@ -112,7 +117,6 @@ func TestRingGrowth(t *testing.T) {
 func TestStore(t *testing.T) {
 	opts := DefaultStoreOptions()
 	opts.Capacity = 10
-	opts.StaleAfter = 5 * time.Second
 	s := NewStore(opts)
 	ch, unsub := s.Subscribe()
 	defer unsub()
@@ -165,7 +169,7 @@ func TestStore(t *testing.T) {
 	}
 
 	// Series not updated within StaleAfter are pruned.
-	if n := s.Prune(now.Add(6 * time.Second)); n != 3 {
+	if n := s.Prune(now.Add(time.Second)); n != 3 {
 		t.Fatalf("pruned %d", n)
 	}
 	if s.Has("proc.42.cpu") || !s.Has("cpu.total.usage") {
@@ -210,6 +214,7 @@ func TestFormat(t *testing.T) {
 		{3*86400 + 4*3600 + 5*60 + 6, UnitSeconds, "3d 04:05:06"},
 		{125, UnitSeconds, "02:05"},
 		{12345, UnitCount, "12.3 k"},
+		{1101, UnitCount, "1101"},
 	}
 	for _, c := range cases {
 		if got := Format(c.v, c.u); got != c.want {

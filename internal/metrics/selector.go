@@ -3,12 +3,15 @@ package metrics
 import (
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 )
 
 // Selector matches metric keys against a pattern. A pattern is a key whose
-// segments may be "*" (exactly one segment) or "**" (zero or more segments),
-// e.g. "cpu.core.*.usage" or "net.**". A literal "*" segment can be written
-// as "\*".
+// segments may be "*" (exactly one segment), "**" (zero or more segments) or
+// a glob within one segment ("*_bps", "eth?", "sd[ab]", see path.Match),
+// e.g. "cpu.core.*.usage", "net.**" or "net.*.*_bps". Glob characters can be
+// escaped with a backslash.
 type Selector struct {
 	pattern string
 	segs    []selSeg
@@ -21,6 +24,7 @@ const (
 	segLiteral selKind = iota
 	segOne
 	segMany
+	segGlob
 )
 
 type selSeg struct {
@@ -46,6 +50,14 @@ func ParseSelector(pattern string) (Selector, error) {
 		case "":
 			return Selector{}, fmt.Errorf("selector %q: empty segment", pattern)
 		default:
+			if hasGlobMeta(r) {
+				if _, err := path.Match(r, ""); err != nil {
+					return Selector{}, fmt.Errorf("selector %q: bad segment %q: %w", pattern, r, err)
+				}
+				sel.segs = append(sel.segs, selSeg{kind: segGlob, text: strings.ReplaceAll(r, `\.`, ".")})
+				sel.literal = false
+				continue
+			}
 			sel.segs = append(sel.segs, selSeg{kind: segLiteral, text: unescape(r)})
 		}
 	}
@@ -101,8 +113,15 @@ func matchSegs(pat []selSeg, segs []string) bool {
 		if len(segs) == 0 {
 			return false
 		}
-		if p.kind == segLiteral && p.text != segs[0] {
-			return false
+		switch p.kind {
+		case segLiteral:
+			if p.text != segs[0] {
+				return false
+			}
+		case segGlob:
+			if ok, _ := path.Match(p.text, segs[0]); !ok {
+				return false
+			}
 		}
 		pat, segs = pat[1:], segs[1:]
 	}
@@ -126,6 +145,20 @@ func splitRaw(s string) []string {
 		}
 	}
 	return append(out, s[start:])
+}
+
+// hasGlobMeta reports whether a raw segment contains unescaped glob
+// metacharacters.
+func hasGlobMeta(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			i++
+		case '*', '?', '[':
+			return true
+		}
+	}
+	return false
 }
 
 // unescape removes escapes from a raw segment produced by splitRaw (which

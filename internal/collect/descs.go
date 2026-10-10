@@ -1,0 +1,49 @@
+package collect
+
+import "github.com/hightemp/smpmon/internal/metrics"
+
+// Metric key layout shared by all platforms. Per-device segments (core index,
+// mount point, interface, pid) are escaped with metrics.NewKey.
+//
+//	cpu.total.{usage,user,system,iowait,steal}   percent
+//	cpu.core.<n>.usage                           percent
+//	cpu.core.<n>.freq, cpu.freq                  Hz
+//	load.{1,5,15}                                count
+//	system.uptime                                seconds
+//	mem.{total,used,available,free,cached,buffers,zfs_arc}  bytes
+//	mem.used_percent, swap.used_percent          percent
+//	swap.{total,used,free}                       bytes
+//	disk.fs.<mount>.{total,used,free}            bytes
+//	disk.fs.<mount>.used_percent                 percent
+//	disk.io.<dev>.{read_bps,write_bps}           bytes/s
+//	disk.io.<dev>.{read_iops,write_iops}         1/s
+//	disk.io.<dev>.util                           percent
+//	net.<if>.{rx_bps,tx_bps}                     bytes/s
+//	net.<if>.{rx_pps,tx_pps,rx_errs,tx_errs}     1/s
+//	net.<if>.{rx_total,tx_total}                 bytes
+//	proc.count, proc.threads, proc.running       count
+//	proc.<pid>.{cpu,mem}                         percent
+func init() {
+	metrics.DefaultRegistry.Register(
+		metrics.Desc{Pattern: "cpu.**.freq", Unit: metrics.UnitHertz, Help: "CPU frequency"},
+		metrics.Desc{Pattern: "cpu.freq", Unit: metrics.UnitHertz, Help: "Average CPU frequency"},
+		metrics.Desc{Pattern: "cpu.**", Unit: metrics.UnitPercent, Max: 100, Help: "CPU usage"},
+		metrics.Desc{Pattern: "load.*", Unit: metrics.UnitNone, Help: "Load average"},
+		metrics.Desc{Pattern: "system.uptime", Unit: metrics.UnitSeconds, Help: "Uptime"},
+		metrics.Desc{Pattern: "mem.used_percent", Unit: metrics.UnitPercent, Max: 100, Help: "Memory used"},
+		metrics.Desc{Pattern: "mem.*", Unit: metrics.UnitBytes, Help: "Memory"},
+		metrics.Desc{Pattern: "swap.used_percent", Unit: metrics.UnitPercent, Max: 100, Help: "Swap used"},
+		metrics.Desc{Pattern: "swap.*", Unit: metrics.UnitBytes, Help: "Swap"},
+		metrics.Desc{Pattern: "disk.fs.*.used_percent", Unit: metrics.UnitPercent, Max: 100, Help: "Filesystem used"},
+		metrics.Desc{Pattern: "disk.fs.**", Unit: metrics.UnitBytes, Help: "Filesystem size"},
+		metrics.Desc{Pattern: "disk.io.*.util", Unit: metrics.UnitPercent, Max: 100, Help: "Disk busy time"},
+		metrics.Desc{Pattern: "disk.io.*.*_bps", Unit: metrics.UnitBytesPerSec, Help: "Disk throughput"},
+		metrics.Desc{Pattern: "disk.io.*.*_iops", Unit: metrics.UnitPerSec, Help: "Disk IOPS"},
+		metrics.Desc{Pattern: "net.*.*_bps", Unit: metrics.UnitBytesPerSec, Help: "Network throughput"},
+		metrics.Desc{Pattern: "net.*.*_total", Unit: metrics.UnitBytes, Help: "Network bytes since boot"},
+		metrics.Desc{Pattern: "net.*.*", Unit: metrics.UnitPerSec, Help: "Network packets/errors"},
+		metrics.Desc{Pattern: "proc.*.cpu", Unit: metrics.UnitPercent, Help: "Process CPU"},
+		metrics.Desc{Pattern: "proc.*.mem", Unit: metrics.UnitPercent, Max: 100, Help: "Process memory"},
+		metrics.Desc{Pattern: "proc.*", Unit: metrics.UnitCount, Help: "Process counts"},
+	)
+}

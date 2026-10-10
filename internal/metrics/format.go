@@ -83,6 +83,9 @@ func Format(v float64, u Unit) string {
 	case UnitRPM:
 		return strconv.FormatFloat(v, 'f', 0, 64) + " RPM"
 	case UnitCount:
+		if math.Abs(v) < 1e4 && v == math.Trunc(v) {
+			return strconv.FormatFloat(v, 'f', 0, 64)
+		}
 		return FormatSI(v)
 	default:
 		return strconv.FormatFloat(v, 'g', 4, 64)

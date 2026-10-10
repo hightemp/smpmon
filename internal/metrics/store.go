@@ -47,16 +47,12 @@ type StoreOptions struct {
 	// CapacityRules override Capacity for matching series (first match wins),
 	// e.g. a small capacity for per-process series.
 	CapacityRules []CapacityRule
-	// StaleAfter is how long a series may go without updates before Prune
-	// removes it (e.g. series of exited processes or unplugged interfaces).
-	StaleAfter time.Duration
 }
 
 // DefaultStoreOptions returns sensible defaults.
 func DefaultStoreOptions() StoreOptions {
 	return StoreOptions{
-		Capacity:   600,
-		StaleAfter: time.Minute,
+		Capacity: 600,
 		CapacityRules: []CapacityRule{
 			{Selector: MustSelector("proc.**"), Capacity: 120},
 		},
@@ -101,9 +97,6 @@ func NewStore(opts StoreOptions) *Store {
 	if opts.Capacity <= 0 {
 		opts.Capacity = DefaultStoreOptions().Capacity
 	}
-	if opts.StaleAfter <= 0 {
-		opts.StaleAfter = DefaultStoreOptions().StaleAfter
-	}
 	return &Store{
 		opts:     opts,
 		series:   make(map[Key]*series),
@@ -147,10 +140,9 @@ func (s *Store) Write(sm Sample) {
 	s.notify()
 }
 
-// Prune removes series that have not been updated since now-StaleAfter and
-// returns how many were removed.
-func (s *Store) Prune(now time.Time) int {
-	cutoff := now.Add(-s.opts.StaleAfter)
+// Prune removes series not updated since cutoff (series of exited processes,
+// unplugged interfaces, ...) and returns how many were removed.
+func (s *Store) Prune(cutoff time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	removed := 0
