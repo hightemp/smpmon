@@ -25,7 +25,9 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 
 - Remote monitoring: watch your servers over SSH with nothing to set up but the binary, switch between hosts, see all of them on one overview, or mix hosts on one dashboard
 
-Planned: metric history, alerts, Prometheus export.
+- History on disk (optional): scroll back through hours or days of data, including the top processes at the time
+
+Planned: alerts, Prometheus export.
 
 ## Install
 
@@ -90,6 +92,8 @@ These are the default bindings; `?` shows the current ones. A `vim` preset and p
 | `T` | choose a theme |
 | `e` | edit the dashboard layout |
 | `H` | choose the host to show |
+| `[` / `]` | go back / forward in recorded history |
+| `w` | change the history window (10m, 1h, 6h, 24h, 7d) |
 | `p` | pause the display |
 | `?` | help |
 | `q`, `ctrl+c` | quit |
@@ -151,6 +155,23 @@ hosts:
 ```
 
 The fingerprint pins the self-signed certificate. Without it, the certificate must be trusted by the system. With `--token-file`, clients can only read metrics; `--control-token-file` sets a second token that also allows kill and renice. The deb and rpm packages install a disabled `smpmon-agent` systemd unit configured in `/etc/smpmon/agent.env`. A launchd job for macOS is in `packaging/`.
+
+## History
+
+With history enabled, smpmon records metrics to disk and lets you look back:
+
+```yaml
+history:
+  enabled: true
+  retention: {raw: 1h, 10s: 24h, 1m: 168h}   # per resolution
+  max_size_mb: 200                          # per host
+```
+
+- `[` goes back in time and `]` forward; past the present you're back to live data, and `esc` returns directly. `w` changes the window length.
+- All dashboards show the recorded window. Graphs fit the whole window, and numbers show the values at its end.
+- The process table shows the top 20 processes by CPU and by memory at that moment, recorded every 10 seconds.
+
+Data is kept at three resolutions (every second, 10-second and 1-minute averages), and the coarsest one that still covers the window is used. Remote hosts are recorded too, each in its own directory under `~/.cache/smpmon/history/`. A broad default set of metrics is recorded; `history.metrics` takes selectors to change it. The collectors needed for recording keep running even when no widget shows their data. The files are compact: the column-wise compressed format stores slowly changing metrics in about a byte per value.
 
 ## Configuration
 
@@ -238,7 +259,7 @@ keys:
 
 The `vim` preset adds `h` `j` `k` `l`, `ctrl+u` / `ctrl+d`, `g` / `G` for navigation, moves kill to `x` / `X` and graph mode to `M`. Keys are names like `x`, `X`, `ctrl+u`, `shift+tab`, `pgdown`, `space`, `enter`, `f5`. Keys bound to two actions that are active at the same time are reported as errors. A key bound in a widget shadows the same global key while that widget is focused. `ctrl+c` always quits.
 
-Actions: `quit`, `help`, `focus_next`, `focus_prev`, `zoom`, `back`, `pause`, `interval_up`, `interval_down`, `graph_mode`, `theme`, `edit`, `dashboard_1`…`dashboard_9`; navigation `up`, `down`, `page_up`, `page_down`, `home`, `end`, `left`, `right`; processes `proc_filter`, `proc_reverse`, `proc_tree`, `proc_collapse`, `proc_details`, `proc_kill`, `proc_kill_force`, `proc_signal`, `proc_renice`, `proc_per_core`; `net_prev`, `net_next`; `docker_all`; editor `edit_parent`, `edit_child`, `edit_split_h`, `edit_split_v`, `edit_add`, `edit_delete`, `edit_move_prev`, `edit_move_next`, `edit_grow`, `edit_shrink`, `edit_rotate`, `edit_type`, `edit_options`, `edit_undo`, `edit_redo`, `edit_save`, `edit_new`, `edit_title`.
+Actions: `quit`, `help`, `focus_next`, `focus_prev`, `zoom`, `back`, `pause`, `interval_up`, `interval_down`, `graph_mode`, `theme`, `edit`, `host`, `history_back`, `history_forward`, `history_window`, `dashboard_1`…`dashboard_9`; navigation `up`, `down`, `page_up`, `page_down`, `home`, `end`, `left`, `right`; processes `proc_filter`, `proc_reverse`, `proc_tree`, `proc_collapse`, `proc_details`, `proc_kill`, `proc_kill_force`, `proc_signal`, `proc_renice`, `proc_per_core`; `net_prev`, `net_next`; `docker_all`; editor `edit_parent`, `edit_child`, `edit_split_h`, `edit_split_v`, `edit_add`, `edit_delete`, `edit_move_prev`, `edit_move_next`, `edit_grow`, `edit_shrink`, `edit_rotate`, `edit_type`, `edit_options`, `edit_undo`, `edit_redo`, `edit_save`, `edit_new`, `edit_title`.
 
 ### Themes
 

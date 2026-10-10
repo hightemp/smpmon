@@ -46,30 +46,31 @@ func Resample(dst, v []float64, n int, agg Agg) []float64 {
 	return dst
 }
 
+// aggregate combines a bucket, ignoring NaN (gaps); an all-NaN bucket stays
+// NaN.
 func aggregate(b []float64, agg Agg) float64 {
-	if len(b) == 0 {
-		return 0
+	n := 0
+	var sum float64
+	lo, hi, last := math.Inf(1), math.Inf(-1), math.NaN()
+	for _, x := range b {
+		if math.IsNaN(x) {
+			continue
+		}
+		n++
+		sum += x
+		lo, hi, last = min(lo, x), max(hi, x), x
+	}
+	if n == 0 {
+		return math.NaN()
 	}
 	switch agg {
 	case AggAvg:
-		var s float64
-		for _, x := range b {
-			s += x
-		}
-		return s / float64(len(b))
+		return sum / float64(n)
 	case AggMin:
-		m := b[0]
-		for _, x := range b[1:] {
-			m = min(m, x)
-		}
-		return m
+		return lo
 	case AggLast:
-		return b[len(b)-1]
+		return last
 	default:
-		m := b[0]
-		for _, x := range b[1:] {
-			m = max(m, x)
-		}
-		return m
+		return hi
 	}
 }

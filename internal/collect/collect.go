@@ -6,6 +6,8 @@ package collect
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"errors"
 	"time"
 
@@ -56,3 +58,45 @@ type ProcessController interface {
 type Closer interface {
 	Close() error
 }
+
+// CollectorsFor maps metric selectors to the collectors producing them.
+func CollectorsFor(patterns []string) []string {
+	var out []string
+	add := func(c string) {
+		if !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	for _, p := range patterns {
+		first, _, _ := strings.Cut(p, ".")
+		switch first {
+		case "cpu":
+			add("cpu")
+			if strings.HasPrefix(p, "cpu.temp") {
+				add("sensors")
+			}
+		case "sensors":
+			add("sensors")
+		case "gpu":
+			add("gpu")
+		case "battery":
+			add("battery")
+		case "docker":
+			add("docker")
+		case "load", "system":
+			add("load")
+		case "mem", "swap":
+			add("mem")
+		case "disk":
+			add("disks")
+		case "net":
+			add("net")
+		case "proc":
+			add("procs")
+		default: // wildcard or unknown prefix: everything may be needed
+			return nil
+		}
+	}
+	return out
+}
+

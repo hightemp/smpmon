@@ -441,8 +441,8 @@ func (w *procWidget) renderDetails(ctx *Context, width, h int) []string {
 
 	gw := (width - 1) / 2
 	pid := strconv.Itoa(int(p.PID))
-	w.cpuBuf = ctx.Store.Series(metrics.NewKey("proc", pid, "cpu"), w.cpuBuf[:0], gw*2)
-	w.memBuf = ctx.Store.Series(metrics.NewKey("proc", pid, "mem"), w.memBuf[:0], gw*2)
+	w.cpuBuf = ctx.series(metrics.NewKey("proc", pid, "cpu"), w.cpuBuf[:0], gw*2)
+	w.memBuf = ctx.series(metrics.NewKey("proc", pid, "mem"), w.memBuf[:0], gw*2)
 	cpuG := chart.Graph{Width: gw, Height: 3, Mode: ctx.GraphMode, Series: []chart.Series{{Values: w.cpuBuf, Gradient: t.CPU}}}
 	memG := chart.Graph{Width: width - gw - 1, Height: 3, Mode: ctx.GraphMode, Series: []chart.Series{{Values: w.memBuf, Gradient: t.Mem}}}
 	cpuC, memC := cpuG.Render(), memG.Render()

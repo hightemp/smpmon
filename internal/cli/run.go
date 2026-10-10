@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +18,7 @@ import (
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/collect/platform"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/history"
 	"github.com/hightemp/smpmon/internal/metrics"
 	"github.com/hightemp/smpmon/internal/remote"
 	"github.com/hightemp/smpmon/internal/source"
@@ -134,6 +138,12 @@ func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error 
 
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
+	if cfg.History.Enabled {
+		if err := setupHistory(ctx, cfg, hosts, &wg); err != nil {
+			cancel()
+			return err
+		}
+	}
 	for _, h := range hosts {
 		done := startSource(ctx, h.Source)
 		wg.Add(1)
@@ -222,4 +232,77 @@ func stopSource(cancel context.CancelFunc, done <-chan struct{}) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 	}
+}
+
+// allCollectors is what a "record everything" history keeps running.
+var allCollectors = []string{"cpu", "load", "mem", "disks", "net", "sensors", "gpu", "battery", "docker", "procs"}
+
+// setupHistory starts a recorder per host, each in its own directory.
+func setupHistory(ctx context.Context, cfg *config.Config, hosts []ui.HostSource, wg *sync.WaitGroup) error {
+	hc := cfg.History
+	base := expandHome(hc.Path)
+	if base == "" {
+		dir, err := os.UserCacheDir()
+		if err != nil {
+			return err
+		}
+		base = filepath.Join(dir, "smpmon", "history")
+	}
+	patterns := hc.Metrics
+	if len(patterns) == 0 {
+		patterns = history.DefaultMetrics
+	}
+	sels := make([]metrics.Selector, 0, len(patterns))
+	for _, p := range patterns {
+		sel, err := metrics.ParseSelector(p)
+		if err != nil {
+			return fmt.Errorf("history.metrics: %w", err)
+		}
+		sels = append(sels, sel)
+	}
+	keep := collect.CollectorsFor(patterns)
+	if keep == nil {
+		keep = allCollectors
+	}
+	if hc.Processes && !slices.Contains(keep, "procs") {
+		keep = append(slices.Clone(keep), "procs")
+	}
+	retention := map[history.Tier]time.Duration{}
+	for tier, d := range history.DefaultRetention {
+		retention[tier] = d
+	}
+	for tier, d := range map[history.Tier]time.Duration{history.Raw: hc.Retention.Raw, history.Ten: hc.Retention.Ten, history.Minute: hc.Retention.Minute} {
+		if d > 0 {
+			retention[tier] = d
+		}
+	}
+	retention[history.Tables] = max(retention[history.Ten], retention[history.Tables])
+	for i := range hosts {
+		h := &hosts[i]
+		dir := filepath.Join(base, safeName(h.Name))
+		rec := history.NewRecorder(h.Source.Store(), history.Options{
+			Dir: dir, Metrics: sels, Processes: hc.Processes, Retention: retention,
+			MaxSize: int64(hc.MaxSizeMB) << 20,
+		})
+		h.HistoryDir, h.Recorder, h.Keep = dir, rec, keep
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := rec.Run(ctx); err != nil {
+				slog.Warn("history", "host", h.Name, "err", err)
+			}
+		}()
+	}
+	return nil
+}
+
+// safeName makes a host name usable as a directory name on every OS.
+func safeName(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_', r == '@':
+			return r
+		}
+		return '_'
+	}, s)
 }

@@ -112,8 +112,8 @@ func (n *netWidget) Render(ctx *Context, w, h int) []string {
 		Series: []chart.Series{{Gradient: t.NetRx}}}
 	txG := chart.Graph{Width: w, Height: h - top, Mode: mode, Scale: scale, Invert: true,
 		Series: []chart.Series{{Gradient: t.NetTx}}}
-	n.rx = ctx.Store.Series(base.Child("rx_bps"), n.rx[:0], rxG.Slots())
-	n.tx = ctx.Store.Series(base.Child("tx_bps"), n.tx[:0], txG.Slots())
+	n.rx = ctx.series(base.Child("rx_bps"), n.rx[:0], rxG.Slots())
+	n.tx = ctx.series(base.Child("tx_bps"), n.tx[:0], txG.Slots())
 	rxG.Series[0].Values, txG.Series[0].Values = n.rx, n.tx
 
 	c := chart.NewCanvas(w, h)

@@ -48,6 +48,9 @@ var Actions = []ActionInfo{
 	{"theme", Global, "choose theme"},
 	{"edit", Global, "edit the dashboard layout"},
 	{"host", Global, "choose the host to show"},
+	{"history_back", Global, "history: go back in time"},
+	{"history_forward", Global, "history: go forward (to live)"},
+	{"history_window", Global, "history: change the window"},
 	{"dashboard_1", Global, "dashboard 1"}, {"dashboard_2", Global, "dashboard 2"},
 	{"dashboard_3", Global, "dashboard 3"}, {"dashboard_4", Global, "dashboard 4"},
 	{"dashboard_5", Global, "dashboard 5"}, {"dashboard_6", Global, "dashboard 6"},
@@ -119,9 +122,10 @@ func defaults() map[Action][]string {
 		"proc_renice": {"i"}, "proc_per_core": {"c"},
 
 		"net_prev": {"b"}, "net_next": {"n"},
-		"docker_all": {"a"},
-		"edit":       {"e"},
-		"host":       {"H"},
+		"docker_all":   {"a"},
+		"edit":         {"e"},
+		"host":         {"H"},
+		"history_back": {"["}, "history_forward": {"]"}, "history_window": {"w"},
 
 		"edit_parent": {"["}, "edit_child": {"]"},
 		"edit_split_h": {"s"}, "edit_split_v": {"v"}, "edit_add": {"a"},

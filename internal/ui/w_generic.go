@@ -115,11 +115,11 @@ func (g *graphWidget) Render(ctx *Context, w, h int) []string {
 	}
 	for i, k := range keys {
 		var vals []float64
-		if samples > gr.Slots() {
+		if samples > gr.Slots() && !ctx.History {
 			g.tmp = ctx.Store.Series(k, g.tmp[:0], samples)
 			vals = chart.Resample(g.bufs[i][:0], g.tmp, gr.Slots(), chart.AggMax)
 		} else {
-			vals = ctx.Store.Series(k, g.bufs[i][:0], gr.Slots())
+			vals = ctx.series(k, g.bufs[i][:0], gr.Slots())
 		}
 		g.bufs[i] = vals
 		grd := chart.Gradient{seriesPalette[i%len(seriesPalette)]}
@@ -273,7 +273,7 @@ func (s *statWidget) Render(ctx *Context, w, h int) []string {
 	text := fg(grd.At(f), bold(formatKey(ctx, s.key, v)))
 	out := []string{alignRight(text, (w+width(text))/2)}
 	if (s.opts.Sparkline == nil || *s.opts.Sparkline) && h >= 2 {
-		s.buf = ctx.Store.Series(s.key, s.buf[:0], w)
+		s.buf = ctx.series(s.key, s.buf[:0], w)
 		out = append(out, chart.Sparkline(s.buf, w, 0, hi, grd))
 	}
 	return block(out, w, h)

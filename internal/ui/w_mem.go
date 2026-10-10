@@ -80,7 +80,7 @@ func (m *memWidget) Render(ctx *Context, w, h int) []string {
 	if (m.opts.Graph == nil || *m.opts.Graph) && spare >= 2 {
 		g := chart.Graph{Width: w, Height: spare, Mode: graphMode(ctx, m.opts.Mode), Max: 100,
 			Series: []chart.Series{{Gradient: t.Mem}}}
-		m.buf = ctx.Store.Series("mem.used_percent", m.buf[:0], g.Slots())
+		m.buf = ctx.series("mem.used_percent", m.buf[:0], g.Slots())
 		g.Series[0].Values = m.buf
 		out = append(out, "")
 		out = append(out, g.Render().Lines()...)

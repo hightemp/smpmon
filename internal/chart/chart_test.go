@@ -1,6 +1,7 @@
 package chart
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -156,6 +157,10 @@ func TestResample(t *testing.T) {
 	}
 	if got := Resample(nil, v, 20, AggMax); len(got) != 10 {
 		t.Fatalf("no-op %v", got)
+	}
+	nan := math.NaN()
+	if got := Resample(nil, []float64{nan, 2, nan, nan}, 2, AggMax); got[0] != 2 || !math.IsNaN(got[1]) {
+		t.Fatalf("NaN handling %v", got)
 	}
 	if got := Tail(v, 3); !slices.Equal(got, []float64{8, 9, 10}) {
 		t.Fatalf("tail %v", got)

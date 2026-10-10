@@ -107,7 +107,7 @@ func (c *cpuWidget) Render(ctx *Context, w, h int) []string {
 		Width: graphW, Height: h, Mode: graphMode(ctx, c.opts.Mode), Max: 100,
 		Series: []chart.Series{{Gradient: t.CPU}},
 	}
-	c.buf = ctx.Store.Series(keyCPUTotal, c.buf[:0], g.Slots())
+	c.buf = ctx.series(keyCPUTotal, c.buf[:0], g.Slots())
 	g.Series[0].Values = c.buf
 	canvas := chart.NewCanvas(graphW, h)
 	g.Draw(canvas, 0, 0)

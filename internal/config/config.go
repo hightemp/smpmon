@@ -32,7 +32,27 @@ type Config struct {
 	Collectors map[string]CollectorConfig `yaml:"collectors"`
 	Keys       Keys                       `yaml:"keys"`
 	Hosts      map[string]Host            `yaml:"hosts"`
+	History    History                    `yaml:"history"`
 	Dashboards Dashboards                 `yaml:"dashboards"`
+}
+
+// History configures recording metrics to disk.
+type History struct {
+	Enabled bool `yaml:"enabled"`
+	// Path is the directory; empty means <user cache dir>/smpmon/history.
+	Path string `yaml:"path,omitempty"`
+	// Metrics are selectors of recorded metrics; empty uses a default set.
+	Metrics []string `yaml:"metrics,omitempty"`
+	// Processes records the top processes every 10 seconds.
+	Processes bool `yaml:"processes"`
+	// Retention per resolution: raw (1 s), 10s and 1m.
+	Retention struct {
+		Raw    time.Duration `yaml:"raw"`
+		Ten    time.Duration `yaml:"10s"`
+		Minute time.Duration `yaml:"1m"`
+	} `yaml:"retention"`
+	// MaxSizeMB caps the directory size per host.
+	MaxSizeMB int `yaml:"max_size_mb"`
 }
 
 // Host is a remote machine to monitor, reached over SSH or a network agent.
@@ -289,6 +309,8 @@ func parse(data []byte, base *Config) (*Config, error) {
 			err = val.Decode(&cfg.Keys)
 		case "hosts":
 			err = val.Decode(&cfg.Hosts)
+		case "history":
+			err = val.Decode(&cfg.History)
 		case "dashboards":
 			var ds Dashboards
 			if err = val.Decode(&ds); err == nil {

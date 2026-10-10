@@ -9,6 +9,7 @@ import (
 
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/history"
 	"github.com/hightemp/smpmon/internal/source"
 )
 
@@ -17,6 +18,12 @@ type HostSource struct {
 	Name   string
 	Source source.Source
 	Procs  collect.ProcessController // nil if process actions are unsupported
+	// HistoryDir holds the host's recorded history; empty if not recorded.
+	HistoryDir string
+	Recorder   *history.Recorder
+	// Keep lists collectors that run regardless of the visible widgets, so
+	// history has no gaps.
+	Keep []string
 }
 
 // conn returns the connection state of a remote host; local hosts are
@@ -55,6 +62,7 @@ func (m *Model) setHost(i int) {
 	if i < 0 || i >= len(m.hosts) {
 		return
 	}
+	m.leaveHistory()
 	m.cur = i
 	h := m.hosts[i]
 	m.ctx.Store, m.ctx.Procs, m.ctx.Host = h.Source.Store(), h.Procs, h.Name
@@ -101,6 +109,9 @@ func (m *Model) updateDemand() {
 		add(i, w.Collectors())
 	}
 	for i, h := range m.hosts {
+		if len(h.Keep) > 0 {
+			add(i, h.Keep)
+		}
 		switch {
 		case all[i]:
 			h.Source.SetDemand(nil)

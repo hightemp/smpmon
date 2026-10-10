@@ -41,6 +41,16 @@ keys:
 #   web1: {ssh: deploy@web1}       # anything ssh accepts, incl. ~/.ssh/config aliases
 #   edge: {url: "tls://edge:9200", token_file: ~/.config/smpmon/edge.token, fingerprint: "sha256:..."}
 
+# Recording metrics to disk lets you look back in time with [ and ] (w
+# changes the window). Every host is recorded separately.
+history:
+  enabled: false
+  # path: ~/.cache/smpmon/history
+  # metrics: ["cpu.**", "mem.*"]   # default: a broad set without per-process series
+  processes: true                  # top processes every 10 s
+  retention: {raw: 1h, 10s: 24h, 1m: 168h}
+  max_size_mb: 200                 # per host
+
 # Layout nodes: `row` places children side by side, `col` stacks them.
 # A child's share of space is set with one of:
 #   size: 10      fixed number of cells

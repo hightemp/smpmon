@@ -124,7 +124,7 @@ func (g *gpuWidget) renderOne(ctx *Context, gpu collect.GPU, w, h int, showName 
 	if gh := h - len(out); gh >= 2 && gpu.Util >= 0 {
 		gr := chart.Graph{Width: w, Height: gh, Mode: graphMode(ctx, g.opts.Mode), Max: 100,
 			Series: []chart.Series{{Gradient: t.CPU}}}
-		g.buf = ctx.Store.Series(metrics.NewKey("gpu", strconv.Itoa(gpu.Index), "util"), g.buf[:0], gr.Slots())
+		g.buf = ctx.series(metrics.NewKey("gpu", strconv.Itoa(gpu.Index), "util"), g.buf[:0], gr.Slots())
 		gr.Series[0].Values = g.buf
 		out = append(out, gr.Render().Lines()...)
 	}

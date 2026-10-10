@@ -30,6 +30,17 @@ type Context struct {
 	Keys      *keymap.Keymap
 	Host      string       // name of the host being shown
 	Hosts     []HostSource // all hosts, for the overview
+	// History is set while Store holds a recorded time window instead of
+	// live data: graphs then fit the whole window into their width.
+	History bool
+}
+
+// series reads up to n values of k for a graph n slots wide.
+func (c *Context) series(k metrics.Key, buf []float64, n int) []float64 {
+	if !c.History {
+		return c.Store.Series(k, buf, n)
+	}
+	return chart.Resample(buf[:0], c.Store.Series(k, nil, 0), n, chart.AggMax)
 }
 
 // action resolves a key press to an action in the given scopes.
@@ -147,45 +158,7 @@ func newWidget(n *config.Node) (Widget, error) {
 }
 
 // collectorsFor maps metric selectors to the collectors producing them.
-func collectorsFor(patterns []string) []string {
-	var out []string
-	add := func(c string) {
-		if !slices.Contains(out, c) {
-			out = append(out, c)
-		}
-	}
-	for _, p := range patterns {
-		first, _, _ := strings.Cut(p, ".")
-		switch first {
-		case "cpu":
-			add("cpu")
-			if strings.HasPrefix(p, "cpu.temp") {
-				add("sensors")
-			}
-		case "sensors":
-			add("sensors")
-		case "gpu":
-			add("gpu")
-		case "battery":
-			add("battery")
-		case "docker":
-			add("docker")
-		case "load", "system":
-			add("load")
-		case "mem", "swap":
-			add("mem")
-		case "disk":
-			add("disks")
-		case "net":
-			add("net")
-		case "proc":
-			add("procs")
-		default: // wildcard or unknown prefix: everything may be needed
-			return nil
-		}
-	}
-	return out
-}
+func collectorsFor(patterns []string) []string { return collect.CollectorsFor(patterns) }
 
 // graphMode returns the widget's graph mode override or the global one.
 func graphMode(ctx *Context, override string) chart.Mode {

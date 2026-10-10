@@ -8,6 +8,7 @@ import (
 
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/keymap"
+	"github.com/hightemp/smpmon/internal/metrics"
 )
 
 // ColorModes lists the valid values of general.color.
@@ -38,6 +39,16 @@ func (c *Config) Validate(knownWidget func(string) bool) error {
 	}
 	if _, err := keymap.Build(c.Keys.Preset, c.Keys.Bind); err != nil {
 		add("keys: %w", err)
+	}
+	if h := c.History; h.Enabled {
+		for _, m := range h.Metrics {
+			if _, err := metricsSelector(m); err != nil {
+				add("history.metrics: %v", err)
+			}
+		}
+		if h.MaxSizeMB < 0 {
+			add("history.max_size_mb must not be negative")
+		}
 	}
 	for _, name := range c.HostNames() {
 		h := c.Hosts[name]
@@ -93,3 +104,5 @@ func (c *Config) Validate(knownWidget func(string) bool) error {
 	}
 	return errors.Join(errs...)
 }
+
+func metricsSelector(s string) (metrics.Selector, error) { return metrics.ParseSelector(s) }

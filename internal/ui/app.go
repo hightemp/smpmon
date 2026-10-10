@@ -64,7 +64,8 @@ type Model struct {
 	frozen     string // last frame while paused
 
 	dialog   dialog
-	edit     *editor // layout editor, nil when not editing
+	edit     *editor   // layout editor, nil when not editing
+	hist     *histView // shown history window, nil when live
 	status   string
 	statusAt time.Time
 
@@ -406,6 +407,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus(msg.text)
 		return m, nil
 
+	case histMsg:
+		m.applyHistory(msg)
+		return m, nil
+
 	case switchHostMsg:
 		m.setHost(m.hostIndex(msg.name))
 		return m, nil
@@ -481,6 +486,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	case a == "back" && m.zoom:
 		m.zoom = false
 		return nil
+	case a == "back" && m.hist != nil:
+		m.leaveHistory()
+		return nil
 	}
 	if w, ok := m.focusedWidget().(Interactive); ok {
 		wctx, _ := m.ctxFor(m.current().places[m.focus].Node)
@@ -514,7 +522,16 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	case "theme":
 		m.dialog = m.themeDialog()
 	case "edit":
+		m.leaveHistory()
 		m.startEdit()
+	case "history_back":
+		return m.histStep(-1)
+	case "history_forward":
+		if m.hist != nil {
+			return m.histStep(1)
+		}
+	case "history_window":
+		return m.histCycleWindow()
 	case "host":
 		if len(m.hosts) > 1 {
 			m.dialog = m.hostDialog()
@@ -790,6 +807,9 @@ func (m *Model) topBar() string {
 	}
 	if m.paused {
 		status = strings.TrimPrefix(status+sep+fg(t.Crit, bold("PAUSED")), sep)
+	}
+	if m.hist != nil {
+		status = strings.TrimSuffix(m.histLabel()+sep+status, sep)
 	}
 	// Optional parts, dropped from the front when space runs out.
 	optional := []string{
