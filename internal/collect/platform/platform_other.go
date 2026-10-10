@@ -3,14 +3,18 @@
 // Package platform returns the collectors implemented for the current OS.
 package platform
 
-import "github.com/hightemp/smpmon/internal/collect"
+import (
+	"github.com/hightemp/smpmon/internal/collect"
+	"github.com/hightemp/smpmon/internal/collect/gops"
+	"github.com/hightemp/smpmon/internal/collect/procctl"
+)
 
-// Collectors returns no collectors until macOS and Windows support lands.
+// Collectors returns fresh instances of all collectors for this OS.
 func Collectors() []collect.Collector {
-	return nil
+	return gops.Collectors()
 }
 
-// ProcessController returns nil until macOS and Windows support lands.
+// ProcessController returns the process controller for this OS.
 func ProcessController() collect.ProcessController {
-	return nil
+	return procctl.New()
 }
