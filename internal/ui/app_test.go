@@ -342,8 +342,8 @@ func TestThemeDialog(t *testing.T) {
 	if m.dialog == nil {
 		t.Fatal("no dialog")
 	}
-	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	_, cmd = m.Update(key("enter"))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	_, cmd := m.Update(key("enter"))
 	if cmd == nil {
 		t.Fatal("no command")
 	}
