@@ -172,6 +172,9 @@ func (p *Procs) fromRaw(ctx context.Context, r *rawProc, memTotal uint64, elapse
 		st.name = r.name
 		if proc, err := process.NewProcessWithContext(ctx, r.pid); err == nil {
 			st.cmdline, _ = proc.CmdlineWithContext(ctx)
+			if !r.hasUID {
+				st.user, _ = proc.UsernameWithContext(ctx)
+			}
 			// p_comm is truncated to 16 bytes: prefer the executable name.
 			if args := strings.Fields(st.cmdline); len(args) > 0 && len(r.name) >= 15 {
 				if base := filepath.Base(args[0]); strings.HasPrefix(base, r.name) {
