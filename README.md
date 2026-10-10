@@ -20,7 +20,7 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 
 ## Install
 
-From source (requires Go 1.24+):
+From source (requires Go 1.26+):
 
 ```sh
 go install github.com/hightemp/smpmon/cmd/smpmon@latest
