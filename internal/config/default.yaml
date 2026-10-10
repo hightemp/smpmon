@@ -1,0 +1,127 @@
+# smpmon configuration.
+#
+# Save as ~/.config/smpmon/config.yaml (see `smpmon config path`). Everything
+# here is the built-in default: your file only needs the settings you change.
+# Dashboards with the same name replace the built-in ones; new names are added.
+version: 1
+
+general:
+  # Base collection and redraw interval (minimum 100ms).
+  interval: 1s
+  # Graph glyphs: braille (highest resolution), block or ascii.
+  graph_mode: braille
+  theme: default
+  # Border style: rounded, single, double, thick or none.
+  border: rounded
+  mouse: true
+  # Dashboards shown as tabs (keys 1-9), in order. Empty shows all.
+  dashboards: [btop, minimal, procs, net, server]
+  default_dashboard: btop
+
+# Per-collector settings: interval and enabled.
+collectors:
+  procs:
+    interval: 2s
+
+# Layout nodes: `row` places children side by side, `col` stacks them.
+# A child's share of space is set with one of:
+#   size: 10      fixed number of cells
+#   size: 30%     percentage of the parent
+#   weight: 2     share of the remaining space (default 1)
+# optionally bounded by min/max cells. Widgets take `title` and `options`.
+dashboards:
+  btop:
+    title: Overview
+    layout:
+      col:
+        - widget: cpu
+          size: 35%
+          min: 8
+        - row:
+            - col:
+                - widget: mem
+                - widget: disks
+                - widget: net
+            - widget: proc
+              weight: 1.4
+    variants:
+      # Narrow terminals: stack everything.
+      - when: {max_width: 99}
+        layout:
+          col:
+            - widget: cpu
+              size: 30%
+            - widget: mem
+              size: 8
+            - widget: net
+              size: 8
+            - widget: proc
+
+  minimal:
+    title: Minimal
+    layout:
+      col:
+        - row:
+            - widget: cpu
+              options: {cores: false}
+            - widget: mem
+          size: 40%
+        - widget: proc
+
+  procs:
+    title: Processes
+    layout:
+      col:
+        - row:
+            - widget: stat
+              title: CPU
+              options: {metric: cpu.total.usage}
+            - widget: stat
+              title: Memory
+              options: {metric: mem.used_percent}
+            - widget: stat
+              title: Load
+              options: {metric: load.1}
+            - widget: stat
+              title: Processes
+              options: {metric: proc.count}
+          size: 5
+        - widget: proc
+          options: {tree: true}
+
+  net:
+    title: Network
+    layout:
+      col:
+        - widget: net
+          weight: 2
+        - row:
+            - widget: graph
+              title: Packets/s
+              options:
+                metrics: ["net.*.rx_pps", "net.*.tx_pps"]
+            - widget: table
+              title: Interfaces
+              options:
+                metrics: ["net.*.rx_total", "net.*.tx_total"]
+
+  server:
+    title: Server
+    layout:
+      row:
+        - col:
+            - widget: cpu
+              options: {cores: false}
+            - widget: graph
+              title: Load
+              options:
+                metrics: [load.1, load.5, load.15]
+                style: line
+            - widget: mem
+        - col:
+            - widget: disks
+            - widget: graph
+              title: Disk I/O
+              options:
+                metrics: ["disk.io.*.read_bps", "disk.io.*.write_bps"]
+            - widget: net
