@@ -31,7 +31,32 @@ type Config struct {
 	General    General                    `yaml:"general"`
 	Collectors map[string]CollectorConfig `yaml:"collectors"`
 	Keys       Keys                       `yaml:"keys"`
+	Hosts      map[string]Host            `yaml:"hosts"`
 	Dashboards Dashboards                 `yaml:"dashboards"`
+}
+
+// Host is a remote machine to monitor, reached over SSH or a network agent.
+type Host struct {
+	// SSH is user@host or an alias from ~/.ssh/config.
+	SSH string `yaml:"ssh,omitempty"`
+	// Command overrides the remote command that starts the agent.
+	Command string `yaml:"command,omitempty"`
+	// URL of a network agent: tls://host:9200.
+	URL string `yaml:"url,omitempty"`
+	// TokenFile holds the agent token (network agents).
+	TokenFile string `yaml:"token_file,omitempty"`
+	// Fingerprint pins a self-signed agent certificate: sha256:<hex>.
+	Fingerprint string `yaml:"fingerprint,omitempty"`
+}
+
+// HostNames returns the configured hosts sorted by name.
+func (c *Config) HostNames() []string {
+	names := make([]string, 0, len(c.Hosts))
+	for n := range c.Hosts {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	return names
 }
 
 // Keys configures key bindings: a preset plus per-action overrides.
@@ -262,6 +287,8 @@ func parse(data []byte, base *Config) (*Config, error) {
 			err = val.Decode(&cfg.Collectors)
 		case "keys":
 			err = val.Decode(&cfg.Keys)
+		case "hosts":
+			err = val.Decode(&cfg.Hosts)
 		case "dashboards":
 			var ds Dashboards
 			if err = val.Decode(&ds); err == nil {

@@ -1,0 +1,29 @@
+# systemd unit for the smpmon network agent. Enable with:
+#   sudo smpmon agent gen-cert --out /etc/smpmon --host "$(hostname -f)"
+#   smpmon agent gen-token | sudo tee /etc/smpmon/agent.token >/dev/null
+#   sudo chmod 600 /etc/smpmon/agent.token /etc/smpmon/agent.key
+#   sudo systemctl enable --now smpmon-agent
+# Settings live in /etc/smpmon/agent.env. Monitoring over SSH
+# (smpmon connect) needs none of this.
+[Unit]
+Description=smpmon agent (remote monitoring)
+Documentation=https://github.com/hightemp/smpmon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=-/etc/smpmon/agent.env
+ExecStart=/usr/bin/smpmon agent --listen ${LISTEN} --cert ${CERT} --key ${KEY} --token-file ${TOKEN_FILE} $EXTRA_ARGS
+Restart=on-failure
+RestartSec=5
+# Runs as root so the agent sees every process and can read /etc/smpmon;
+# the sandbox below keeps it read-only.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+CacheDirectory=smpmon
+Environment=XDG_CACHE_HOME=%C
+
+[Install]
+WantedBy=multi-user.target

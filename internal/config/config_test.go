@@ -279,3 +279,34 @@ func TestSaveDashboard(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestHosts(t *testing.T) {
+	cfg, err := Parse([]byte("hosts:\n  web1: {ssh: deploy@web1}\n  edge: {url: 'tls://edge:9200', token_file: /x}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Validate(nil); err != nil {
+		t.Fatal(err)
+	}
+	if names := cfg.HostNames(); len(names) != 2 || names[0] != "edge" {
+		t.Fatalf("names %v", names)
+	}
+	for _, bad := range []string{
+		"hosts:\n  local: {ssh: x}\n",
+		"hosts:\n  a: {}\n",
+		"hosts:\n  a: {ssh: x, url: 'tls://y'}\n",
+		"hosts:\n  a: {url: 'http://y', token_file: /x}\n",
+		"hosts:\n  a: {url: 'tls://y'}\n",
+	} {
+		cfg, err := Parse([]byte(bad))
+		if err == nil {
+			err = cfg.Validate(nil)
+		}
+		if err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	if _, err := Parse([]byte("hosts:\n  a: {sshh: x}\n")); err == nil {
+		t.Error("unknown host field accepted")
+	}
+}

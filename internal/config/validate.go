@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/keymap"
@@ -38,6 +39,19 @@ func (c *Config) Validate(knownWidget func(string) bool) error {
 	if _, err := keymap.Build(c.Keys.Preset, c.Keys.Bind); err != nil {
 		add("keys: %w", err)
 	}
+	for _, name := range c.HostNames() {
+		h := c.Hosts[name]
+		switch {
+		case name == "local":
+			add("hosts: %q is reserved for this machine", name)
+		case (h.SSH == "") == (h.URL == ""):
+			add("hosts.%s: set exactly one of ssh or url", name)
+		case h.URL != "" && !strings.HasPrefix(h.URL, "tls://") && !strings.HasPrefix(h.URL, "tcp://"):
+			add("hosts.%s.url: want tls://host:port", name)
+		case h.URL != "" && h.TokenFile == "":
+			add("hosts.%s: token_file is required for network agents", name)
+		}
+	}
 	for name, cc := range c.Collectors {
 		if cc.Interval != 0 && cc.Interval < MinInterval {
 			add("collectors.%s.interval: %v is below the minimum of %v", name, cc.Interval, MinInterval)
@@ -65,6 +79,11 @@ func (c *Config) Validate(knownWidget func(string) bool) error {
 			for _, w := range l.Widgets() {
 				if knownWidget != nil && !knownWidget(w.Widget) {
 					add("dashboard %q, line %d: unknown widget %q", name, w.Line, w.Widget)
+				}
+				if w.Source != "" && w.Source != "local" {
+					if _, ok := c.Hosts[w.Source]; !ok {
+						add("dashboard %q, line %d: source %q is not in hosts", name, w.Line, w.Source)
+					}
 				}
 				if w.Size.Kind == SizePercent && w.Size.Value == 0 {
 					add("dashboard %q, line %d: size 0%% hides the widget", name, w.Line)

@@ -47,6 +47,7 @@ var Actions = []ActionInfo{
 	{"graph_mode", Global, "cycle graph mode"},
 	{"theme", Global, "choose theme"},
 	{"edit", Global, "edit the dashboard layout"},
+	{"host", Global, "choose the host to show"},
 	{"dashboard_1", Global, "dashboard 1"}, {"dashboard_2", Global, "dashboard 2"},
 	{"dashboard_3", Global, "dashboard 3"}, {"dashboard_4", Global, "dashboard 4"},
 	{"dashboard_5", Global, "dashboard 5"}, {"dashboard_6", Global, "dashboard 6"},
@@ -120,6 +121,7 @@ func defaults() map[Action][]string {
 		"net_prev": {"b"}, "net_next": {"n"},
 		"docker_all": {"a"},
 		"edit":       {"e"},
+		"host":       {"H"},
 
 		"edit_parent": {"["}, "edit_child": {"]"},
 		"edit_split_h": {"s"}, "edit_split_v": {"v"}, "edit_add": {"a"},

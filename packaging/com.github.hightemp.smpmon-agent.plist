@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd job for the smpmon network agent on macOS.
+  Copy to ~/Library/LaunchAgents/ (or /Library/LaunchDaemons/ for all users),
+  adjust the paths, then: launchctl load -w <file>
+  Monitoring over SSH (smpmon connect) needs none of this.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.github.hightemp.smpmon-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/smpmon</string>
+    <string>agent</string>
+    <string>--listen</string>
+    <string>:9200</string>
+    <string>--cert</string>
+    <string>/usr/local/etc/smpmon/agent.crt</string>
+    <string>--key</string>
+    <string>/usr/local/etc/smpmon/agent.key</string>
+    <string>--token-file</string>
+    <string>/usr/local/etc/smpmon/agent.token</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>

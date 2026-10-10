@@ -27,12 +27,17 @@ type LocalOptions struct {
 	Intervals map[string]time.Duration
 	// Store configures the underlying store.
 	Store metrics.StoreOptions
+	// OnSample, if set, is called with every collected sample after it has
+	// been written to the store (the remote agent forwards them). It runs
+	// on the collector's goroutine.
+	OnSample func(collector string, s metrics.Sample)
 }
 
 // Local collects metrics of the machine it runs on.
 type Local struct {
 	store      *metrics.Store
 	collectors []collect.Collector
+	onSample   func(string, metrics.Sample)
 
 	mu        sync.Mutex
 	interval  time.Duration
@@ -51,6 +56,7 @@ func NewLocal(opts LocalOptions, collectors []collect.Collector) *Local {
 	l := &Local{
 		store:      metrics.NewStore(opts.Store),
 		collectors: collectors,
+		onSample:   opts.OnSample,
 		interval:   max(opts.Interval, MinInterval),
 		overrides:  make(map[string]time.Duration),
 		status:     make(map[string]*CollectorStatus),
@@ -237,6 +243,9 @@ func (l *Local) collectOnce(ctx context.Context, c collect.Collector, interval t
 	dur := time.Since(start)
 	if err == nil {
 		l.store.Write(sample)
+		if l.onSample != nil {
+			l.onSample(c.Name(), sample)
+		}
 	} else if ctx.Err() == nil {
 		slog.Debug("collect failed", "collector", c.Name(), "err", err)
 	}

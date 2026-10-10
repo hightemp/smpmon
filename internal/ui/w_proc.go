@@ -659,7 +659,7 @@ func (w *procWidget) signalCmd(ctx *Context, which int) tea.Cmd {
 	pid, name := p.PID, p.Name
 	procs := ctx.Procs
 	return dialogCmd(&confirmDialog{
-		text: fmt.Sprintf("Send %s to %d (%s)?", sig.Name, pid, name),
+		text: fmt.Sprintf("Send %s to %d (%s)%s?", sig.Name, pid, name, onHost(ctx)),
 		onYes: func() tea.Cmd {
 			if err := procs.Signal(pid, sig.Number); err != nil {
 				return statusCmd(fmt.Sprintf("%s %d: %v", sig.Name, pid, err))
@@ -682,7 +682,7 @@ func (w *procWidget) chooseSignalCmd(ctx *Context) tea.Cmd {
 	pid, name := p.PID, p.Name
 	procs := ctx.Procs
 	return dialogCmd(&chooseDialog{
-		heading: fmt.Sprintf("Signal for %d (%s)", pid, name),
+		heading: fmt.Sprintf("Signal for %d (%s)%s", pid, name, onHost(ctx)),
 		options: opts,
 		onPick: func(i int) tea.Cmd {
 			if err := procs.Signal(pid, sigs[i].Number); err != nil {
@@ -701,7 +701,7 @@ func (w *procWidget) reniceCmd(ctx *Context) tea.Cmd {
 	pid, name, cur := p.PID, p.Name, p.Nice
 	procs := ctx.Procs
 	return dialogCmd(&inputDialog{
-		prompt: fmt.Sprintf("Nice value for %d (%s), now %d [-20..19]:", pid, name, cur),
+		prompt: fmt.Sprintf("Nice value for %d (%s)%s, now %d [-20..19]:", pid, name, onHost(ctx), cur),
 		value:  strconv.Itoa(int(cur)),
 		onSubmit: func(s string) tea.Cmd {
 			n, err := strconv.Atoi(strings.TrimSpace(s))
@@ -714,4 +714,12 @@ func (w *procWidget) reniceCmd(ctx *Context) tea.Cmd {
 			return statusCmd(fmt.Sprintf("nice of %d (%s) set to %d", pid, name, n))
 		},
 	})
+}
+
+// onHost names the host in confirmations when it isn't this machine.
+func onHost(ctx *Context) string {
+	if ctx.Host == "" || ctx.Host == "local" {
+		return ""
+	}
+	return " on " + ctx.Host
 }

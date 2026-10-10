@@ -53,3 +53,44 @@ type CollectorStatus struct {
 	Interval time.Duration
 	Enabled  bool
 }
+
+// ConnState is the state of a remote source's connection.
+type ConnState uint8
+
+// Connection states.
+const (
+	Connecting ConnState = iota
+	Online
+	Offline
+)
+
+func (s ConnState) String() string {
+	return [...]string{"connecting", "online", "offline"}[s]
+}
+
+// ConnInfo describes a remote source's connection.
+type ConnInfo struct {
+	State    ConnState
+	Err      error
+	Latency  time.Duration
+	LastData time.Time
+	Hostname string // reported by the agent
+	OS, Arch string
+	Agent    string // agent's smpmon version
+}
+
+// Remote is implemented by sources that read from another machine.
+type Remote interface {
+	Source
+	Conn() ConnInfo
+}
+
+// ParseState parses a State name.
+func ParseState(s string) State {
+	for i, n := range [...]string{"idle", "ok", "error", "unsupported"} {
+		if n == s {
+			return State(i)
+		}
+	}
+	return StateIdle
+}

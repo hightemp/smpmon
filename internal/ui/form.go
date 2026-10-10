@@ -92,6 +92,16 @@ func (m *Model) optionsForm() dialog {
 			label: "title",
 			value: func(n *config.Node) string { return n.Title },
 			set:   func(n *config.Node, v string) error { n.Title = v; return nil },
+		}, formField{
+			label: "source",
+			value: func(n *config.Node) string { return n.Source },
+			set: func(n *config.Node, v string) error {
+				if v != "" && m.hostIndex(v) < 0 {
+					return fmt.Errorf("unknown host %q", v)
+				}
+				n.Source = v
+				return nil
+			},
 		})
 	}
 	fields = append(fields,

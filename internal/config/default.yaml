@@ -33,6 +33,14 @@ collectors:
 keys:
   preset: default
 
+# Remote hosts, shown with `H` and on the hosts dashboard. SSH hosts need
+# key-based login (ssh-agent) and smpmon on the server: `smpmon connect
+# --install NAME` puts it in ~/.local/bin.
+#
+# hosts:
+#   web1: {ssh: deploy@web1}       # anything ssh accepts, incl. ~/.ssh/config aliases
+#   edge: {url: "tls://edge:9200", token_file: ~/.config/smpmon/edge.token, fingerprint: "sha256:..."}
+
 # Layout nodes: `row` places children side by side, `col` stacks them.
 # A child's share of space is set with one of:
 #   size: 10      fixed number of cells
@@ -178,3 +186,9 @@ dashboards:
               options:
                 metrics: ["docker.*.mem_used"]
                 style: line
+
+  # Added to the tabs automatically when there are remote hosts.
+  hosts:
+    title: Hosts
+    layout:
+      widget: hosts

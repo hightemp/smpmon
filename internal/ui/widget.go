@@ -28,6 +28,8 @@ type Context struct {
 	Procs     collect.ProcessController // nil if unsupported
 	NumCPU    int
 	Keys      *keymap.Keymap
+	Host      string       // name of the host being shown
+	Hosts     []HostSource // all hosts, for the overview
 }
 
 // action resolves a key press to an action in the given scopes.
@@ -113,6 +115,7 @@ var metas = map[string]widgetMeta{
 	"stat":    {"big number with sparkline", reflect.TypeFor[statOptions](), "metric: mem.used_percent"},
 	"table":   {"table of metrics", reflect.TypeFor[tableOptions](), "metrics: ['mem.*']"},
 	"text":    {"text with host info", reflect.TypeFor[textOptions](), ""},
+	"hosts":   {"overview of all hosts", reflect.TypeFor[struct{}](), ""},
 }
 
 // KnownWidget reports whether a widget type exists.

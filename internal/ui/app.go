@@ -30,9 +30,13 @@ type Options struct {
 	Config     *config.Config
 	ConfigPath string // watched for changes when set
 	SavePath   string // where the layout editor saves; may not exist yet
-	Source     source.Source
-	Procs      collect.ProcessController
-	Dashboard  string // dashboard to open; empty uses the config default
+	// Hosts are the machines to show; the first is shown initially unless
+	// Host names another. If empty, Source and Procs form a single host.
+	Hosts     []HostSource
+	Host      string
+	Source    source.Source
+	Procs     collect.ProcessController
+	Dashboard string // dashboard to open; empty uses the config default
 }
 
 // dashboard is an instantiated config dashboard.
@@ -65,7 +69,9 @@ type Model struct {
 	statusAt time.Time
 
 	width, height int
-	storeCh       <-chan struct{}
+	hosts         []HostSource
+	cur           int           // index of the current host
+	updates       chan struct{} // any store was written
 	configCh      chan struct{}
 	unsupSig      string // unsupported collectors at the last layout
 	cancelWatch   context.CancelFunc
@@ -73,6 +79,12 @@ type Model struct {
 }
 
 type storeMsg struct{}
+
+type heartbeatMsg struct{}
+
+func heartbeat() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return heartbeatMsg{} })
+}
 
 type configMsg struct {
 	cfg *config.Config
@@ -82,8 +94,30 @@ type configMsg struct {
 // New builds the model. It returns an error if a widget can't be created
 // (e.g. invalid options).
 func New(opts Options) (*Model, error) {
-	m := &Model{opts: opts, configCh: make(chan struct{}, 1)}
+	m := &Model{opts: opts, configCh: make(chan struct{}, 1), updates: make(chan struct{}, 1)}
 	m.hostname, _ = os.Hostname()
+	m.hosts = opts.Hosts
+	if len(m.hosts) == 0 {
+		m.hosts = []HostSource{{Name: "local", Source: opts.Source, Procs: opts.Procs}}
+	}
+	if opts.Host != "" {
+		i := m.hostIndex(opts.Host)
+		if i < 0 {
+			return nil, fmt.Errorf("unknown host %q", opts.Host)
+		}
+		m.cur = i
+	}
+	for _, h := range m.hosts {
+		ch, _ := h.Source.Store().Subscribe()
+		go func() {
+			for range ch {
+				select {
+				case m.updates <- struct{}{}:
+				default:
+				}
+			}
+		}()
+	}
 	if err := m.applyConfig(opts.Config); err != nil {
 		return nil, err
 	}
@@ -95,8 +129,6 @@ func New(opts Options) (*Model, error) {
 		}
 		m.active = i
 	}
-	ch, _ := opts.Source.Store().Subscribe()
-	m.storeCh = ch
 	return m, nil
 }
 
@@ -123,7 +155,12 @@ func (m *Model) applyConfig(cfg *config.Config) error {
 		return err
 	}
 	var dbs []*dashboard
-	for _, name := range cfg.Tabs() {
+	tabs := cfg.Tabs()
+	// The hosts overview appears by itself once there are remote hosts.
+	if _, ok := cfg.Dashboards.Get("hosts"); ok && len(m.hosts) > 1 && !slices.Contains(tabs, "hosts") {
+		tabs = append(slices.Clone(tabs), "hosts")
+	}
+	for _, name := range tabs {
 		dc, _ := cfg.Dashboards.Get(name)
 		d := &dashboard{name: name, title: cmp.Or(dc.Title, name), cfg: dc, widgets: map[*config.Node]Widget{}}
 		layouts := []*config.Node{dc.Layout}
@@ -150,12 +187,14 @@ func (m *Model) applyConfig(cfg *config.Config) error {
 	m.dashboards = dbs
 	m.border = cfg.General.Border
 	m.ctx = Context{
-		Store:     m.opts.Source.Store(),
+		Store:     m.hosts[m.cur].Source.Store(),
 		Registry:  metrics.DefaultRegistry,
 		Theme:     theme,
 		GraphMode: mode,
-		Interval:  m.opts.Source.Interval(),
-		Procs:     m.opts.Procs,
+		Interval:  m.hosts[m.cur].Source.Interval(),
+		Procs:     m.hosts[m.cur].Procs,
+		Host:      m.hosts[m.cur].Name,
+		Hosts:     m.hosts,
 		NumCPU:    runtime.NumCPU(),
 		Keys:      keys,
 	}
@@ -197,7 +236,7 @@ func (m *Model) relayout() {
 // unsupported returns the collectors that can't run on this machine.
 func (m *Model) unsupported() map[string]bool {
 	out := map[string]bool{}
-	for _, st := range m.opts.Source.Status() {
+	for _, st := range m.hosts[m.cur].Source.Status() {
 		if st.State == source.StateUnsupported {
 			out[st.Name] = true
 		}
@@ -250,26 +289,6 @@ func (m *Model) defaultFocus() int {
 	return max(first, 0)
 }
 
-func (m *Model) updateDemand() {
-	var names []string
-	for _, p := range m.current().places {
-		cs := m.current().widgets[p.Node].Collectors()
-		if cs == nil {
-			m.opts.Source.SetDemand(nil)
-			return
-		}
-		for _, c := range cs {
-			if !slices.Contains(names, c) {
-				names = append(names, c)
-			}
-		}
-	}
-	if len(m.current().places) == 0 {
-		return // keep collecting until the first layout
-	}
-	m.opts.Source.SetDemand(names)
-}
-
 func (m *Model) focusedWidget() Widget {
 	d := m.current()
 	if m.focus < len(d.places) {
@@ -280,7 +299,7 @@ func (m *Model) focusedWidget() Widget {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	cmds := []tea.Cmd{m.waitStore()}
+	cmds := []tea.Cmd{m.waitStore(), heartbeat()}
 	if m.opts.ConfigPath != "" {
 		ctx, cancel := context.WithCancel(context.Background())
 		m.cancelWatch = cancel
@@ -292,7 +311,7 @@ func (m *Model) Init() tea.Cmd {
 // waitStore waits for the next store write. Writes from different collectors
 // arrive close together, so a short delay coalesces them into one redraw.
 func (m *Model) waitStore() tea.Cmd {
-	ch := m.storeCh
+	ch := m.updates
 	return func() tea.Msg {
 		<-ch
 		time.Sleep(30 * time.Millisecond)
@@ -374,7 +393,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if err := m.applyConfig(msg.cfg); err != nil {
 			m.setStatus("config not reloaded: " + firstLine(err.Error()))
 		} else {
-			m.opts.Source.SetInterval(msg.cfg.General.Interval)
+			for _, h := range m.hosts {
+				h.Source.SetInterval(msg.cfg.General.Interval)
+			}
 			m.ctx.Interval = msg.cfg.General.Interval
 			m.setStatus("config reloaded")
 		}
@@ -384,6 +405,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		m.setStatus(msg.text)
 		return m, nil
+
+	case switchHostMsg:
+		m.setHost(m.hostIndex(msg.name))
+		return m, nil
+
+	case heartbeatMsg:
+		// Redraw for the clock and connection states, and re-layout when
+		// collectors report what's unsupported.
+		if fmt.Sprint(m.unsupported()) != m.unsupSig {
+			m.relayout()
+		}
+		return m, heartbeat()
 
 	case themeMsg:
 		if t, err := LookupTheme(msg.name); err == nil {
@@ -450,7 +483,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	if w, ok := m.focusedWidget().(Interactive); ok {
-		if handled, cmd := w.HandleKey(&m.ctx, k); handled || w.Capturing() {
+		wctx, _ := m.ctxFor(m.current().places[m.focus].Node)
+		if handled, cmd := w.HandleKey(wctx, k); handled || w.Capturing() {
 			return cmd
 		}
 	}
@@ -481,6 +515,12 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		m.dialog = m.themeDialog()
 	case "edit":
 		m.startEdit()
+	case "host":
+		if len(m.hosts) > 1 {
+			m.dialog = m.hostDialog()
+		} else {
+			m.setStatus("no remote hosts: add them under hosts: in the config or use smpmon connect")
+		}
 	default:
 		if n, ok := strings.CutPrefix(string(a), "dashboard_"); ok {
 			i, _ := strconv.Atoi(n)
@@ -519,10 +559,12 @@ var intervalSteps = []time.Duration{
 }
 
 func (m *Model) changeInterval(dir int) {
-	cur := m.opts.Source.Interval()
+	cur := m.hosts[m.cur].Source.Interval()
 	i, _ := slices.BinarySearch(intervalSteps, cur)
 	i = max(min(i+dir, len(intervalSteps)-1), 0)
-	m.opts.Source.SetInterval(intervalSteps[i])
+	for _, h := range m.hosts {
+		h.Source.SetInterval(intervalSteps[i])
+	}
 	m.ctx.Interval = intervalSteps[i]
 	m.setStatus("interval " + intervalSteps[i].String())
 }
@@ -570,7 +612,8 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if m.border == "none" {
 		ox, oy = 0, 0
 	}
-	return w.HandleMouse(&m.ctx, msg, mo.X-rect.X-ox, mo.Y-rect.Y-oy)
+	wctx, _ := m.ctxFor(d.places[idx].Node)
+	return w.HandleMouse(wctx, msg, mo.X-rect.X-ox, mo.Y-rect.Y-oy)
 }
 
 func (m *Model) zoomRect() layout.Rect {
@@ -658,9 +701,13 @@ type segment struct {
 
 func (m *Model) drawWidget(screen [][]segment, w Widget, n *config.Node, r layout.Rect, focused bool) {
 	t := m.ctx.Theme
-	title, info := w.Title(&m.ctx)
+	wctx, _ := m.ctxFor(n)
+	title, info := w.Title(wctx)
 	if n.Title != "" {
 		title = n.Title
+	}
+	if n.Source != "" && n.Source != m.hosts[m.cur].Name {
+		title += " @" + n.Source
 	}
 	color := t.BoxColor(w.Kind())
 	titleColor := t.Title
@@ -673,12 +720,16 @@ func (m *Model) drawWidget(screen [][]segment, w Widget, n *config.Node, r layou
 		f.title = fg(titleColor, bold(title))
 	}
 	if iw, ok := w.(Interactive); ok && focused {
-		f.footer = iw.Footer(&m.ctx)
+		f.footer = iw.Footer(wctx)
 	}
 	cw, ch := f.inner(r.W, r.H)
 	var content []string
 	if cw > 0 && ch > 0 {
-		content = w.Render(&m.ctx, cw, ch)
+		if ctx, ok := m.ctxFor(n); ok {
+			content = w.Render(ctx, cw, ch)
+		} else {
+			content = block([]string{fg(t.Crit, "unknown host "+n.Source)}, cw, ch)
+		}
 	}
 	for i, l := range f.render(r.W, r.H, content) {
 		if y := r.Y + i; y < len(screen) {
@@ -745,6 +796,11 @@ func (m *Model) topBar() string {
 		fg(t.Hotkey, "?") + fg(t.Dim, " help"),
 		fg(t.Fg, m.hostname),
 		fg(t.Dim, m.ctx.Interval.String()),
+	}
+	if b := m.hostBadge(); b != "" {
+		// With remote hosts the badge replaces the local hostname and is
+		// dropped last.
+		optional = append([]string{optional[0]}, optional[2], b)
 	}
 	clock := fg(t.Title, m.ctx.Now.Format("15:04:05"))
 	room := m.width - width(left.String()) - 1

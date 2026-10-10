@@ -23,7 +23,9 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 - Mouse support, built-in themes, and config hot reload
 - A single static binary with no cgo
 
-Planned: metric history, alerts, Prometheus export and remote agents.
+- Remote monitoring: watch your servers over SSH with nothing to set up but the binary, switch between hosts, see all of them on one overview, or mix hosts on one dashboard
+
+Planned: metric history, alerts, Prometheus export.
 
 ## Install
 
@@ -65,6 +67,8 @@ Prebuilt binaries and deb/rpm packages are published on the [Releases](https://g
 smpmon                    # start the TUI
 smpmon -d procs           # open a specific dashboard
 smpmon -c config.yaml     # use a specific config file
+smpmon connect user@server            # monitor a server over SSH
+smpmon connect --install web1 db      # install smpmon there first
 smpmon snapshot           # print all current metrics once
 smpmon snapshot -s 'net.total.*' --json
 smpmon config default     # print the default config with comments
@@ -85,6 +89,7 @@ These are the default bindings; `?` shows the current ones. A `vim` preset and p
 | `g` | cycle graph mode (braille / block / ascii) |
 | `T` | choose a theme |
 | `e` | edit the dashboard layout |
+| `H` | choose the host to show |
 | `p` | pause the display |
 | `?` | help |
 | `q`, `ctrl+c` | quit |
@@ -103,6 +108,49 @@ In the process widget:
 | `c` | show CPU per core or as a share of the whole machine |
 
 In the network widget, `b` and `n` switch the interface. In the Docker widget, `←` `→` change the sort order and `a` shows stopped containers. Mouse: click a widget or tab to select it, click a column header to sort, use the wheel to scroll.
+
+## Remote monitoring
+
+smpmon shows other machines the same way as this one. The simplest way is SSH:
+
+```sh
+smpmon connect --install deploy@web1   # first time: puts smpmon in ~/.local/bin on the server
+smpmon connect deploy@web1 db          # later; names from ~/.ssh/config work too
+```
+
+`connect` runs `smpmon agent --stdio` on the server through your `ssh` command, so your keys, `ssh-agent`, `~/.ssh/config`, jump hosts and known hosts all apply. Nothing listens on the network, and only the data shown on screen is collected. Login must work without a password prompt: use keys, and connect once with plain `ssh` to accept the host key. `--install` copies this binary if the server runs the same OS and architecture, and otherwise downloads the matching release and checks its checksum. Set `SMPMON_SSH` to use a different ssh program.
+
+Hosts you watch regularly go into the config. They connect when smpmon starts, and a Hosts tab appears:
+
+```yaml
+hosts:
+  web1: {ssh: deploy@web1}
+  db:   {ssh: db}               # an alias from ~/.ssh/config
+```
+
+- `H` switches every dashboard to another host. The top bar shows the host and its state.
+- The Hosts dashboard has a card per host with CPU, memory, the fullest disk, network, load and latency. `enter` shows that host.
+- `source: <host>` on a widget shows that host on any dashboard, e.g. the CPUs of three servers side by side.
+- When a host drops, its widgets keep the last data and the top bar says how long it has been offline. smpmon reconnects automatically.
+- Processes on a remote host can be killed and reniced with the rights of the SSH user. Confirmations name the host.
+
+### Network agent
+
+For machines without SSH access, or for many clients, run a network agent with TLS and a token:
+
+```sh
+smpmon agent gen-cert --out /etc/smpmon --host server.example.com   # prints the certificate fingerprint
+smpmon agent gen-token > /etc/smpmon/agent.token
+smpmon agent --listen :9200 --cert /etc/smpmon/agent.crt --key /etc/smpmon/agent.key \
+  --token-file /etc/smpmon/agent.token
+```
+
+```yaml
+hosts:
+  edge: {url: "tls://server.example.com:9200", token_file: ~/.config/smpmon/edge.token, fingerprint: "sha256:…"}
+```
+
+The fingerprint pins the self-signed certificate. Without it, the certificate must be trusted by the system. With `--token-file`, clients can only read metrics; `--control-token-file` sets a second token that also allows kill and renice. The deb and rpm packages install a disabled `smpmon-agent` systemd unit configured in `/etc/smpmon/agent.env`. A launchd job for macOS is in `packaging/`.
 
 ## Configuration
 

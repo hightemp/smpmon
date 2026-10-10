@@ -32,6 +32,7 @@ archives:
     files:
       - LICENSE
       - README.md
+      - packaging/*
 
 checksum:
   name_template: checksums.txt
@@ -44,6 +45,14 @@ nfpms:
     description: A configurable terminal resource monitor with dashboards and graphs.
     license: MIT
     formats: [deb, rpm]
+    contents:
+      - src: packaging/smpmon-agent.service
+        dst: /usr/lib/systemd/system/smpmon-agent.service
+        file_info: {mode: 0644}
+      - src: packaging/agent.env
+        dst: /etc/smpmon/agent.env
+        type: config|noreplace
+        file_info: {mode: 0644}
 
 # Package manager manifests go to separate repositories. Pushing there
 # needs a token with write access (secret TAP_GITHUB_TOKEN); without it the

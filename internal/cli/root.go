@@ -69,7 +69,7 @@ func NewRootCommand() *cobra.Command {
 				}
 				defer pprof.StopCPUProfile()
 			}
-			return runTUI(cmd.Context(), opts)
+			return runTUI(cmd.Context(), opts, nil)
 		},
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
@@ -82,7 +82,8 @@ func NewRootCommand() *cobra.Command {
 	_ = f.MarkHidden("cpuprofile")
 	cmd.Flags().StringVarP(&opts.dashboard, "dashboard", "d", "", "dashboard to open on start")
 
-	cmd.AddCommand(newVersionCommand(), newSnapshotCommand(), newConfigCommand(opts), newFrameCommand(opts), newThemeCommand())
+	cmd.AddCommand(newVersionCommand(), newSnapshotCommand(), newConfigCommand(opts), newFrameCommand(opts), newThemeCommand(),
+		newAgentCommand(), newConnectCommand(opts))
 	return cmd
 }
 
