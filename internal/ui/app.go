@@ -595,20 +595,48 @@ func (m *Model) topBar() string {
 			left.WriteString(fg(t.Dim, l))
 		}
 	}
-	var right []string
+	sep := fg(t.Dim, " │ ")
+	status := ""
 	if m.status != "" && time.Since(m.statusAt) < 5*time.Second {
-		right = append(right, fg(t.Warn, m.status))
+		status = fg(t.Warn, m.status)
 	}
 	if m.paused {
-		right = append(right, fg(t.Crit, bold("PAUSED")))
+		status = strings.TrimPrefix(status+sep+fg(t.Crit, bold("PAUSED")), sep)
 	}
-	right = append(right,
-		fg(t.Dim, m.ctx.Interval.String()),
+	// Optional parts, dropped from the front when space runs out.
+	optional := []string{
+		fg(t.Hotkey, "?") + fg(t.Dim, " help"),
 		fg(t.Fg, m.hostname),
-		fg(t.Title, m.ctx.Now.Format("15:04:05")),
-		fg(t.Hotkey, "?")+fg(t.Dim, " help"),
-	)
-	return spread(left.String(), strings.Join(right, fg(t.Dim, " │ ")), m.width)
+		fg(t.Dim, m.ctx.Interval.String()),
+	}
+	clock := fg(t.Title, m.ctx.Now.Format("15:04:05"))
+	room := m.width - width(left.String()) - 1
+	for {
+		parts := []string{}
+		if status != "" {
+			parts = append(parts, status)
+		}
+		for i := len(optional) - 1; i >= 0; i-- {
+			parts = append(parts, optional[i])
+		}
+		parts = append(parts, clock)
+		right := strings.Join(parts, sep)
+		if width(right) <= room || (len(optional) == 0 && status == "") {
+			return spread(left.String(), right, m.width)
+		}
+		if len(optional) > 0 {
+			optional = optional[1:]
+			continue
+		}
+		// Only status and clock left: shorten the status.
+		budget := room - width(sep+clock)
+		if budget < 4 {
+			status = ""
+			continue
+		}
+		status = fitEllipsis(status, budget)
+		return spread(left.String(), strings.TrimRight(status, " ")+sep+clock, m.width)
+	}
 }
 
 func (m *Model) helpDialog() dialog {

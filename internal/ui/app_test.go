@@ -213,3 +213,23 @@ func TestWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestTopBarDegrades(t *testing.T) {
+	src := liveSource(t)
+	m := newTestModel(t, src, 90, 30)
+	m.hostname = strings.Repeat("h", 40)
+	m.setStatus("a long status message that will not fit next to the tabs")
+	m.ctx.Now = time.Now()
+	bar := ansi.Strip(m.topBar())
+	if width(bar) != 90 {
+		t.Fatalf("width %d: %q", width(bar), bar)
+	}
+	if !strings.Contains(bar, m.ctx.Now.Format("15:04")) || !strings.Contains(bar, "a long") {
+		t.Fatalf("clock or status missing: %q", bar)
+	}
+	m.setStatus("")
+	m.hostname = "box"
+	if bar := ansi.Strip(m.topBar()); !strings.Contains(bar, "help") || !strings.Contains(bar, "box") {
+		t.Fatalf("help should fit without status: %q", bar)
+	}
+}
