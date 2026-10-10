@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
@@ -20,7 +21,20 @@ func resolveConfigPath(flag string) (string, bool, error) {
 	return p, false, err
 }
 
+// loadThemes loads user theme files. Errors are returned for reporting, but
+// callers may continue: only the selected theme has to be valid.
+func loadThemes() error {
+	dir, err := ui.ThemesDir()
+	if err != nil {
+		return err
+	}
+	return ui.LoadUserThemes(dir)
+}
+
 func loadConfig(flag string) (*config.Config, string, error) {
+	if err := loadThemes(); err != nil {
+		slog.Warn("theme files", "err", err)
+	}
 	path, explicit, err := resolveConfigPath(flag)
 	if err != nil {
 		return nil, "", err
@@ -76,6 +90,9 @@ func newConfigCommand(opts *rootOptions) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				if err := loadThemes(); err != nil {
+					return fmt.Errorf("theme files:\n%w", err)
+				}
 				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s: OK\n", path)
 				return err
 			},
@@ -95,6 +112,63 @@ func newConfigCommand(opts *rootOptions) *cobra.Command {
 					return err
 				}
 				return enc.Close()
+			},
+		},
+	)
+	return cmd
+}
+
+func newThemeCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "theme",
+		Short: "List and export color themes",
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "list",
+			Short: "List built-in and user themes",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				if err := loadThemes(); err != nil {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "warning:", err)
+				}
+				for _, n := range ui.ThemeNames() {
+					if _, err := fmt.Fprintln(cmd.OutOrStdout(), n); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:   "export <name>",
+			Short: "Print a theme as YAML, a starting point for your own",
+			Args:  cobra.ExactArgs(1),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				_ = loadThemes()
+				t, err := ui.LookupTheme(args[0])
+				if err != nil {
+					return err
+				}
+				data, err := ui.ExportTheme(t)
+				if err != nil {
+					return err
+				}
+				_, err = cmd.OutOrStdout().Write(data)
+				return err
+			},
+		},
+		&cobra.Command{
+			Use:   "path",
+			Short: "Print the directory for user themes",
+			Args:  cobra.NoArgs,
+			RunE: func(cmd *cobra.Command, _ []string) error {
+				dir, err := ui.ThemesDir()
+				if err != nil {
+					return err
+				}
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), dir)
+				return err
 			},
 		},
 	)

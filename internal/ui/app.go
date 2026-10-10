@@ -14,6 +14,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
@@ -312,6 +313,11 @@ func (m *Model) waitConfig() tea.Cmd {
 		<-ch
 		cfg, err := config.Load(path, true)
 		if err == nil {
+			if dir, derr := ThemesDir(); derr == nil {
+				err = LoadUserThemes(dir)
+			}
+		}
+		if err == nil {
 			err = CheckConfig(cfg)
 		}
 		return configMsg{cfg: cfg, err: err}
@@ -349,6 +355,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusMsg:
 		m.setStatus(msg.text)
+		return m, nil
+
+	case themeMsg:
+		if t, err := LookupTheme(msg.name); err == nil {
+			m.ctx.Theme = t
+			m.setStatus("theme: " + t.Name)
+		}
+		m.frozen = ""
 		return m, nil
 
 	case openDialogMsg:
@@ -421,6 +435,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		m.setStatus("graph mode: " + m.ctx.GraphMode.String())
 	case "?", "h", "f1":
 		m.dialog = m.helpDialog()
+	case "T":
+		m.dialog = m.themeDialog()
 	default:
 		if len(s) == 1 && s[0] >= '1' && s[0] <= '9' {
 			m.switchDashboard(int(s[0] - '1'))
@@ -704,6 +720,20 @@ func (m *Model) topBar() string {
 	}
 }
 
+type themeMsg struct{ name string }
+
+func (m *Model) themeDialog() dialog {
+	names := ThemeNames()
+	return &chooseDialog{
+		heading: "Theme",
+		options: names,
+		sel:     max(slices.Index(names, m.ctx.Theme.Name), 0),
+		onPick: func(i int) tea.Cmd {
+			return func() tea.Msg { return themeMsg{names[i]} }
+		},
+	}
+}
+
 func (m *Model) helpDialog() dialog {
 	return &helpDialog{sections: []helpSection{
 		{"Global", [][2]string{
@@ -712,6 +742,7 @@ func (m *Model) helpDialog() dialog {
 			{"z / esc", "zoom focused widget"},
 			{"+ / -", "change update interval"},
 			{"g", "cycle graph mode (braille/block/ascii)"},
+			{"T", "choose theme"},
 			{"p", "pause display"},
 			{"q / ctrl+c", "quit"},
 		}},
@@ -729,6 +760,14 @@ func (m *Model) helpDialog() dialog {
 	}}
 }
 
+// colorProfiles maps general.color to forced profiles; "auto" detects.
+var colorProfiles = map[string]colorprofile.Profile{
+	"truecolor": colorprofile.TrueColor,
+	"256":       colorprofile.ANSI256,
+	"16":        colorprofile.ANSI,
+	"none":      colorprofile.Ascii,
+}
+
 // Run starts the UI and blocks until the user quits.
 func Run(ctx context.Context, opts Options) error {
 	m, err := New(opts)
@@ -737,6 +776,10 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	// Data changes once per interval, so a lower frame rate saves wakeups
 	// without making input feel slower.
-	_, err = tea.NewProgram(m, tea.WithContext(ctx), tea.WithFPS(30)).Run()
+	popts := []tea.ProgramOption{tea.WithContext(ctx), tea.WithFPS(30)}
+	if p, ok := colorProfiles[opts.Config.General.Color]; ok {
+		popts = append(popts, tea.WithColorProfile(p))
+	}
+	_, err = tea.NewProgram(m, popts...).Run()
 	return err
 }

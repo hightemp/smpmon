@@ -67,6 +67,7 @@ smpmon version
 | `z`, `esc` | zoom the focused widget, unzoom |
 | `+` / `-` | change the update interval |
 | `g` | cycle graph mode (braille / block / ascii) |
+| `T` | choose a theme |
 | `p` | pause the display |
 | `?` | help |
 | `q`, `ctrl+c` | quit |
@@ -135,6 +136,17 @@ dashboards:
 ```
 
 A layout node is one of `row` (children side by side), `col` (children stacked) or `widget`. A node's share of its parent is set with `size: 10` (cells), `size: 30%` or `weight: 2` (share of the remaining space, default 1), optionally bounded by `min` and `max`.
+
+### Themes
+
+Built-in themes: `default` (btop colors), `nord`, `gruvbox`, `dracula`, `monochrome`. To make your own, export one and edit it:
+
+```sh
+mkdir -p "$(smpmon theme path)"
+smpmon theme export nord > "$(smpmon theme path)/mine.yaml"
+```
+
+A theme only needs the colors it changes; the rest come from the theme named in `inherit` (default: `default`). Set `general.theme: mine` or press `T` to switch. `general.color` forces the color depth (`truecolor`, `256`, `16` or `none`) when detection gets it wrong.
 
 ### Widgets
 

@@ -10,7 +10,11 @@ general:
   interval: 1s
   # Graph glyphs: braille (highest resolution), block or ascii.
   graph_mode: braille
+  # Built-in themes: default, nord, gruvbox, dracula, monochrome. Your own
+  # go in <config dir>/smpmon/themes/<name>.yaml (see `smpmon theme export`).
   theme: default
+  # Color depth: auto (detect), truecolor, 256, 16 or none.
+  color: auto
   # Border style: rounded, single, double, thick or none.
   border: rounded
   mouse: true

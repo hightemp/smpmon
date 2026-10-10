@@ -173,21 +173,34 @@ var themes = map[string]*Theme{
 	},
 }
 
-// ThemeNames lists the built-in themes.
+// ThemeNames lists built-in and user themes.
 func ThemeNames() []string {
-	names := make([]string, 0, len(themes))
+	userThemesMu.RLock()
+	defer userThemesMu.RUnlock()
+	names := make([]string, 0, len(themes)+len(userThemes))
 	for n := range themes {
 		names = append(names, n)
+	}
+	for n := range userThemes {
+		if _, dup := themes[n]; !dup {
+			names = append(names, n)
+		}
 	}
 	slices.Sort(names)
 	return names
 }
 
-// LookupTheme returns a built-in theme by name.
+// LookupTheme returns a user theme or a built-in theme by name. User themes
+// take precedence, so a file can override a built-in theme.
 func LookupTheme(name string) (*Theme, error) {
-	t, ok := themes[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown theme %q (available: %v)", name, ThemeNames())
+	userThemesMu.RLock()
+	t, ok := userThemes[name]
+	userThemesMu.RUnlock()
+	if ok {
+		return t, nil
 	}
-	return t, nil
+	if t, ok := themes[name]; ok {
+		return t, nil
+	}
+	return nil, fmt.Errorf("unknown theme %q (available: %v)", name, ThemeNames())
 }

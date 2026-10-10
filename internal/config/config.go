@@ -38,8 +38,10 @@ type General struct {
 	Interval  time.Duration `yaml:"interval"`
 	GraphMode string        `yaml:"graph_mode"`
 	Theme     string        `yaml:"theme"`
-	Border    string        `yaml:"border"`
-	Mouse     bool          `yaml:"mouse"`
+	// Color forces the color depth: auto, truecolor, 256, 16 or none.
+	Color  string `yaml:"color"`
+	Border string `yaml:"border"`
+	Mouse  bool   `yaml:"mouse"`
 	// Dashboards lists the dashboards shown as tabs, in order. Empty means
 	// all of them in definition order.
 	Dashboards       []string `yaml:"dashboards"`

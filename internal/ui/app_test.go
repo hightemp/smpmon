@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -262,4 +264,92 @@ func TestPruneUnsupported(t *testing.T) {
 	if pruneUnsupported(&root, widgets, map[string]bool{"battery": true, "gpu": true, "cpu": true, "load": true, "sensors": true}) != nil {
 		t.Fatal("expected nil when nothing is left")
 	}
+}
+
+func TestUserThemes(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, data string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("ocean.yaml", "inherit: nord\ncolors:\n  fg: \"#112233\"\ngradients:\n  cpu: [\"#000000\", \"#ffffff\"]\nboxes:\n  proc: \"#abcdef\"\n")
+	write("deep.yaml", "inherit: ocean\ncolors:\n  dim: \"#010101\"\n")
+	write("broken.yaml", "colours:\n  fg: red\n")
+	t.Cleanup(func() { _ = LoadUserThemes(t.TempDir()) })
+
+	err := LoadUserThemes(dir)
+	if err == nil || !strings.Contains(err.Error(), "broken.yaml") || !strings.Contains(err.Error(), "line 1") {
+		t.Fatalf("expected error for broken.yaml with a line number, got %v", err)
+	}
+	deep, err := LookupTheme("deep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nord := themes["nord"]
+	if deep.Fg != hex("#112233") || deep.Dim != hex("#010101") || deep.Title != nord.Title ||
+		deep.CPU.At(1) != hex("#ffffff") || deep.BoxColor("proc") != hex("#abcdef") {
+		t.Fatalf("deep %+v", deep)
+	}
+	if nord.Fg == hex("#112233") || nord.Boxes["proc"] == hex("#abcdef") {
+		t.Fatal("built-in theme was modified")
+	}
+	if !slices.Contains(ThemeNames(), "deep") {
+		t.Fatal("user theme not listed")
+	}
+
+	// Export round trip.
+	data, err := ExportTheme(themes["gruvbox"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	write2 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(write2, "copy.yaml"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := LoadUserThemes(write2); err != nil {
+		t.Fatal(err)
+	}
+	cp, err := LookupTheme("copy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cp.Fg != themes["gruvbox"].Fg || len(cp.CPU) != len(themes["gruvbox"].CPU) {
+		t.Fatal("export round trip changed the theme")
+	}
+
+	for _, bad := range []string{
+		"colors:\n  fgg: \"#fff\"\n",
+		"colors:\n  fg: nothex\n",
+		"inherit: nope\n",
+		"inherit: self\n",
+		"gradients:\n  cpu: []\n",
+	} {
+		d := t.TempDir()
+		if err := os.WriteFile(filepath.Join(d, "self.yaml"), []byte(bad), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := LoadUserThemes(d); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+func TestThemeDialog(t *testing.T) {
+	src := liveSource(t)
+	m := newTestModel(t, src, 100, 30)
+	m.Update(key("T"))
+	if m.dialog == nil {
+		t.Fatal("no dialog")
+	}
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	_, cmd = m.Update(key("enter"))
+	if cmd == nil {
+		t.Fatal("no command")
+	}
+	m.Update(cmd())
+	if m.ctx.Theme.Name == "default" {
+		t.Fatal("theme not changed")
+	}
+	checkFrame(t, "after theme change", viewLines(t, m), 100, 30)
 }

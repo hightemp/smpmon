@@ -8,6 +8,9 @@ import (
 	"github.com/hightemp/smpmon/internal/chart"
 )
 
+// ColorModes lists the valid values of general.color.
+var ColorModes = []string{"auto", "truecolor", "256", "16", "none"}
+
 // BorderStyles lists the valid values of general.border.
 var BorderStyles = []string{"rounded", "single", "double", "thick", "none"}
 
@@ -24,6 +27,9 @@ func (c *Config) Validate(knownWidget func(string) bool) error {
 	}
 	if _, err := chart.ParseMode(g.GraphMode); err != nil {
 		add("general.graph_mode: %v", err)
+	}
+	if g.Color != "" && !slices.Contains(ColorModes, g.Color) {
+		add("general.color: unknown mode %q (want one of %v)", g.Color, ColorModes)
 	}
 	if !slices.Contains(BorderStyles, g.Border) {
 		add("general.border: unknown style %q (want one of %v)", g.Border, BorderStyles)
