@@ -6,11 +6,11 @@ package linux
 import (
 	"bytes"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/hightemp/smpmon/internal/collect"
@@ -51,13 +51,15 @@ type reader struct {
 }
 
 // read returns the contents of path. The returned slice is only valid until
-// the next call.
+// the next call. Raw syscalls are used instead of os.File: collectors read
+// thousands of tiny /proc files per sweep, and os.File adds an allocation,
+// a finalizer and extra syscalls to each.
 func (r *reader) read(path string) ([]byte, error) {
-	f, err := os.Open(path)
+	fd, err := openRetry(path)
 	if err != nil {
-		return nil, err
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	defer f.Close()
+	defer func() { _ = syscall.Close(fd) }()
 	if r.buf == nil {
 		r.buf = make([]byte, 0, 4096)
 	}
@@ -66,13 +68,25 @@ func (r *reader) read(path string) ([]byte, error) {
 		if len(r.buf) == cap(r.buf) {
 			r.buf = append(r.buf, 0)[:len(r.buf)]
 		}
-		n, err := f.Read(r.buf[len(r.buf):cap(r.buf)])
-		r.buf = r.buf[:len(r.buf)+n]
-		if errors.Is(err, io.EOF) || (err == nil && n == 0) {
-			return r.buf, nil
+		n, err := syscall.Read(fd, r.buf[len(r.buf):cap(r.buf)])
+		if err == syscall.EINTR {
+			continue
 		}
 		if err != nil {
-			return nil, err
+			return nil, &os.PathError{Op: "read", Path: path, Err: err}
+		}
+		if n == 0 {
+			return r.buf, nil
+		}
+		r.buf = r.buf[:len(r.buf)+n]
+	}
+}
+
+func openRetry(path string) (int, error) {
+	for {
+		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+		if err != syscall.EINTR {
+			return fd, err
 		}
 	}
 }
@@ -106,6 +120,83 @@ func lines(b []byte, f func(line []byte)) {
 		f(b[:i])
 		b = b[i+1:]
 	}
+}
+
+// fields splits b on spaces into dst without allocating and returns the
+// number of fields found (at most len(dst)).
+func fields(b []byte, dst [][]byte) int {
+	n := 0
+	for i := 0; i < len(b) && n < len(dst); {
+		for i < len(b) && (b[i] == ' ' || b[i] == '\n' || b[i] == '\t') {
+			i++
+		}
+		start := i
+		for i < len(b) && b[i] != ' ' && b[i] != '\n' && b[i] != '\t' {
+			i++
+		}
+		if i > start {
+			dst[n] = b[start:i]
+			n++
+		}
+	}
+	return n
+}
+
+// listPIDs appends the numeric entries of dir (a /proc mount) to dst using
+// getdents64 directly, avoiding a string allocation per entry.
+func listPIDs(dir string, buf []byte, dst []int32) ([]int32, []byte, error) {
+	fd, err := openRetry(dir)
+	if err != nil {
+		return dst, buf, &os.PathError{Op: "open", Path: dir, Err: err}
+	}
+	defer func() { _ = syscall.Close(fd) }()
+	if len(buf) < 32*1024 {
+		buf = make([]byte, 32*1024)
+	}
+	for {
+		n, err := syscall.Getdents(fd, buf)
+		if err == syscall.EINTR {
+			continue
+		}
+		if err != nil {
+			return dst, buf, &os.PathError{Op: "getdents", Path: dir, Err: err}
+		}
+		if n <= 0 {
+			return dst, buf, nil
+		}
+		// struct linux_dirent64 { u64 ino; s64 off; u16 reclen; u8 type; char name[]; }
+		for off := 0; off+19 < n; {
+			reclen := int(buf[off+16]) | int(buf[off+17])<<8
+			if reclen == 0 {
+				break
+			}
+			name := buf[off+19 : off+reclen]
+			if pid, ok := parsePID(name); ok {
+				dst = append(dst, pid)
+			}
+			off += reclen
+		}
+	}
+}
+
+// parsePID parses a NUL-terminated decimal directory name.
+func parsePID(name []byte) (int32, bool) {
+	var v int64
+	digits := 0
+	for _, c := range name {
+		if c == 0 {
+			break
+		}
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		v = v*10 + int64(c-'0')
+		digits++
+		if v > 1<<31-1 {
+			return 0, false
+		}
+	}
+	return int32(v), digits > 0
 }
 
 // parseUint parses an unsigned decimal integer, returning 0 on error.

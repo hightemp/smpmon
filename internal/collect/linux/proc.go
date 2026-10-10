@@ -40,6 +40,11 @@ type Procs struct {
 	boot     time.Time
 	pageSize uint64
 	numCPU   int
+
+	pids    []int32
+	dirBuf  []byte
+	fields  [24][]byte
+	pathBuf []byte
 }
 
 var (
@@ -79,12 +84,8 @@ func (p *Procs) Init() error {
 // Collect implements collect.Collector.
 func (p *Procs) Collect(ctx context.Context, s *metrics.Sample) error {
 	memTotal := p.memTotal()
-	dir, err := os.Open(p.fs.Proc)
-	if err != nil {
-		return err
-	}
-	names, err := dir.Readdirnames(-1)
-	dir.Close()
+	var err error
+	p.pids, p.dirBuf, err = listPIDs(p.fs.Proc, p.dirBuf, p.pids[:0])
 	if err != nil {
 		return err
 	}
@@ -96,20 +97,13 @@ func (p *Procs) Collect(ctx context.Context, s *metrics.Sample) error {
 		st.seen = false
 	}
 
-	procs := make([]collect.Process, 0, len(names))
+	procs := make([]collect.Process, 0, len(p.pids))
 	var threads int
-	for _, name := range names {
-		if name[0] < '0' || name[0] > '9' {
-			continue
-		}
+	for _, pid := range p.pids {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pid64, err := strconv.ParseInt(name, 10, 32)
-		if err != nil {
-			continue
-		}
-		pr, ok := p.readProcess(int32(pid64), memTotal, elapsed, first)
+		pr, ok := p.readProcess(pid, memTotal, elapsed, first)
 		if !ok {
 			continue
 		}
@@ -137,7 +131,8 @@ func (p *Procs) Collect(ctx context.Context, s *metrics.Sample) error {
 // readProcess reads one /proc/<pid>. It returns false if the process
 // vanished while being read.
 func (p *Procs) readProcess(pid int32, memTotal uint64, elapsed time.Duration, first bool) (collect.Process, bool) {
-	base := p.fs.proc(strconv.Itoa(int(pid)))
+	p.pathBuf = strconv.AppendInt(append(append(p.pathBuf[:0], p.fs.Proc...), '/'), int64(pid), 10)
+	base := string(p.pathBuf)
 	b, err := p.r.read(base + "/stat")
 	if err != nil {
 		return collect.Process{}, false
@@ -148,8 +143,8 @@ func (p *Procs) readProcess(pid int32, memTotal uint64, elapsed time.Duration, f
 		return collect.Process{}, false
 	}
 	comm := b[open+1 : end]
-	f := bytes.Fields(b[end+2:])
-	if len(f) < 22 {
+	f := p.fields[:]
+	if fields(b[end+2:], f) < 22 {
 		return collect.Process{}, false
 	}
 	ticks := parseUint(f[11]) + parseUint(f[12])
@@ -159,7 +154,7 @@ func (p *Procs) readProcess(pid int32, memTotal uint64, elapsed time.Duration, f
 	if !known || st.start != start {
 		st = &procState{
 			start:  start,
-			name:   string(comm),
+			name:   collect.Sanitize(string(comm)),
 			cpuKey: metrics.NewKey("proc", strconv.Itoa(int(pid)), "cpu"),
 			memKey: metrics.NewKey("proc", strconv.Itoa(int(pid)), "mem"),
 		}
@@ -212,7 +207,7 @@ func (p *Procs) cmdline(base, name string) string {
 		return "[" + name + "]" // kernel thread or zombie
 	}
 	b = bytes.TrimRight(b, "\x00")
-	return string(bytes.ReplaceAll(b, []byte{0}, []byte{' '}))
+	return collect.Sanitize(string(bytes.ReplaceAll(b, []byte{0}, []byte{' '})))
 }
 
 func (p *Procs) user(base string) string {

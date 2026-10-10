@@ -7,11 +7,11 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/ui"
 )
 
-// knownWidget validates widget names in config; set by the UI package once
-// widgets exist. Until then every name is accepted.
-var knownWidget func(string) bool
+// knownWidget validates widget names in config.
+var knownWidget = ui.KnownWidget
 
 // resolveConfigPath returns the config path and whether it was given
 // explicitly (an explicit path must exist).

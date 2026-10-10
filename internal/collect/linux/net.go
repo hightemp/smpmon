@@ -7,7 +7,9 @@ import (
 	"context"
 	"net"
 	"os"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/metrics"
@@ -29,17 +31,25 @@ type Net struct {
 	prevAt time.Time
 	keys   map[string]netKeys
 
-	// Interface addresses change rarely and cost a netlink round trip, so
-	// they are refreshed every addrsTTL.
-	addrs   map[string][]string
-	addrsAt time.Time
+	// Link attributes (addresses, state, speed, physical) change rarely and
+	// cost a netlink dump or several sysfs reads per interface, so they are
+	// refreshed every attrsTTL for all interfaces at once.
+	attrs   map[string]linkAttrs
+	attrsAt time.Time
 }
 
-const addrsTTL = 10 * time.Second
+type linkAttrs struct {
+	addrs     []string
+	up        bool
+	speedMbps int
+	physical  bool
+}
+
+const attrsTTL = 10 * time.Second
 
 // NewNet creates a Net collector.
 func NewNet(fs FS) *Net {
-	return &Net{fs: fs, prev: make(map[string]netCounters), keys: make(map[string]netKeys), addrs: make(map[string][]string)}
+	return &Net{fs: fs, prev: make(map[string]netCounters), keys: make(map[string]netKeys), attrs: make(map[string]linkAttrs)}
 }
 
 // Name implements collect.Collector.
@@ -74,12 +84,17 @@ func (n *Net) Collect(_ context.Context, s *metrics.Sample) error {
 	first := n.prevAt.IsZero()
 	n.prevAt = s.Time
 	defRoute := n.defaultInterface()
-	if s.Time.Sub(n.addrsAt) >= addrsTTL {
-		clear(n.addrs)
-		n.addrsAt = s.Time
+	var addrs map[string][]string
+	if s.Time.Sub(n.attrsAt) >= attrsTTL {
+		clear(n.attrs)
+		n.attrsAt = s.Time
+		addrs = interfaceAddrs()
 	}
 
 	var ifaces []collect.NetInterface
+	var total netCounters
+	var totalRx, totalTx float64
+	physical := 0
 	seen := map[string]bool{}
 	lines(b, func(l []byte) {
 		name, rest, ok := bytes.Cut(l, []byte(":"))
@@ -106,18 +121,22 @@ func (n *Net) Collect(_ context.Context, s *metrics.Sample) error {
 			RxTotal:  cur.rxBytes,
 			TxTotal:  cur.txBytes,
 		}
-		if state, err := readString(n.fs.sys("class/net", iface, "operstate")); err == nil {
-			ni.Up = state == "up" || (ni.Loopback && state == "unknown")
-		}
-		if speed, err := readUint(n.fs.sys("class/net", iface, "speed")); err == nil && speed < 1<<31 {
-			ni.SpeedMbps = int(speed)
-		}
-		addrs, cached := n.addrs[iface]
+		attrs, cached := n.attrs[iface]
 		if !cached {
-			addrs = interfaceAddrs(iface)
-			n.addrs[iface] = addrs
+			attrs = n.linkAttrs(iface, ni.Loopback)
+			attrs.addrs = addrs[iface]
+			n.attrs[iface] = attrs
 		}
-		ni.Addrs = addrs
+		ni.Up, ni.SpeedMbps, ni.Addrs = attrs.up, attrs.speedMbps, attrs.addrs
+
+		// Totals only count physical NICs: bridges, veths and tunnels carry
+		// the same traffic again.
+		isPhysical := attrs.physical
+		if isPhysical {
+			physical++
+			total.rxBytes += cur.rxBytes
+			total.txBytes += cur.txBytes
+		}
 
 		k := n.keysFor(iface)
 		s.Add(k.rxTotal, float64(cur.rxBytes))
@@ -127,6 +146,10 @@ func (n *Net) Collect(_ context.Context, s *metrics.Sample) error {
 			ni.TxBps = rate(cur.txBytes, prev.txBytes, elapsed)
 			s.Add(k.rxBps, ni.RxBps)
 			s.Add(k.txBps, ni.TxBps)
+			if isPhysical {
+				totalRx += ni.RxBps
+				totalTx += ni.TxBps
+			}
 			s.Add(k.rxPps, rate(cur.rxPackets, prev.rxPackets, elapsed))
 			s.Add(k.txPps, rate(cur.txPackets, prev.txPackets, elapsed))
 			s.Add(k.rxErrs, rate(cur.rxErrs, prev.rxErrs, elapsed))
@@ -139,8 +162,32 @@ func (n *Net) Collect(_ context.Context, s *metrics.Sample) error {
 			delete(n.prev, name)
 		}
 	}
+	if physical > 0 {
+		k := n.keysFor("total")
+		s.Add(k.rxTotal, float64(total.rxBytes))
+		s.Add(k.txTotal, float64(total.txBytes))
+		if !first {
+			s.Add(k.rxBps, totalRx)
+			s.Add(k.txBps, totalTx)
+		}
+	}
 	s.SetTable(collect.TableInterfaces, ifaces)
 	return nil
+}
+
+// linkAttrs reads link state from sysfs. An interface backed by a device is
+// a real NIC rather than a bridge, veth, tunnel or loopback.
+func (n *Net) linkAttrs(iface string, loopback bool) linkAttrs {
+	var a linkAttrs
+	if state, err := readString(n.fs.sys("class/net", iface, "operstate")); err == nil {
+		a.up = state == "up" || (loopback && state == "unknown")
+	}
+	if speed, err := readUint(n.fs.sys("class/net", iface, "speed")); err == nil && speed < 1<<31 {
+		a.speedMbps = int(speed)
+	}
+	_, err := os.Stat(n.fs.sys("class/net", iface, "device"))
+	a.physical = err == nil
+	return a
 }
 
 // defaultInterface returns the interface carrying the IPv4 default route.
@@ -159,18 +206,54 @@ func (n *Net) defaultInterface() string {
 	return iface
 }
 
-func interfaceAddrs(name string) []string {
-	ifi, err := net.InterfaceByName(name)
+// interfaceAddrs returns the addresses of all interfaces keyed by name using
+// two netlink dumps. net.Interface.Addrs dumps every address of the system
+// for each call, which is quadratic on hosts with many container interfaces.
+func interfaceAddrs() map[string][]string {
+	ifs, err := net.Interfaces()
 	if err != nil {
 		return nil
 	}
-	addrs, err := ifi.Addrs()
+	names := make(map[int]string, len(ifs))
+	for _, i := range ifs {
+		names[i.Index] = i.Name
+	}
+	rib, err := syscall.NetlinkRIB(syscall.RTM_GETADDR, syscall.AF_UNSPEC)
 	if err != nil {
 		return nil
 	}
-	out := make([]string, 0, len(addrs))
-	for _, a := range addrs {
-		out = append(out, a.String())
+	msgs, err := syscall.ParseNetlinkMessage(rib)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string][]string, len(ifs))
+	for _, m := range msgs {
+		if m.Header.Type != syscall.RTM_NEWADDR || len(m.Data) < syscall.SizeofIfAddrmsg {
+			continue
+		}
+		ifa := (*syscall.IfAddrmsg)(unsafe.Pointer(&m.Data[0]))
+		attrs, err := syscall.ParseNetlinkRouteAttr(&m)
+		if err != nil {
+			continue
+		}
+		var ip net.IP
+		for _, a := range attrs {
+			// IFA_LOCAL is the interface's own address on point-to-point
+			// links, where IFA_ADDRESS is the peer.
+			if a.Attr.Type == syscall.IFA_LOCAL || (a.Attr.Type == syscall.IFA_ADDRESS && ip == nil) {
+				ip = net.IP(a.Value)
+			}
+		}
+		if ip == nil {
+			continue
+		}
+		bits := 32
+		if ifa.Family == syscall.AF_INET6 {
+			bits = 128
+		}
+		name := names[int(ifa.Index)]
+		ipn := net.IPNet{IP: ip, Mask: net.CIDRMask(int(ifa.Prefixlen), bits)}
+		out[name] = append(out[name], ipn.String())
 	}
 	return out
 }

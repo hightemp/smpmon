@@ -1,6 +1,25 @@
 package collect
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+// Sanitize replaces control characters (newlines, tabs, escapes) with
+// spaces so process names and command lines cannot break the terminal UI.
+func Sanitize(s string) string {
+	if !strings.ContainsFunc(s, isControl) {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if isControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
+func isControl(r rune) bool { return r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) }
 
 // Table names used in metrics.Sample.Tables. Values stored under these names
 // are treated as immutable once written.

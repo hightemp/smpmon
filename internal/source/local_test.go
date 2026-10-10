@@ -128,3 +128,20 @@ func TestLocalIntervalOverride(t *testing.T) {
 		t.Fatalf("interval not clamped: %v", l.Interval())
 	}
 }
+
+func TestNextTick(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		at, want time.Duration
+	}{
+		{100 * time.Millisecond, time.Second},
+		{0, time.Second},
+		{900 * time.Millisecond, 2 * time.Second}, // too close to the boundary
+		{1500 * time.Millisecond, 2 * time.Second},
+	}
+	for _, c := range cases {
+		if got := nextTick(base.Add(c.at), time.Second); !got.Equal(base.Add(c.want)) {
+			t.Errorf("nextTick(+%v) = +%v, want +%v", c.at, got.Sub(base), c.want)
+		}
+	}
+}

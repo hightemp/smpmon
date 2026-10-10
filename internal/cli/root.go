@@ -2,10 +2,11 @@
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"runtime/pprof"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +19,7 @@ type rootOptions struct {
 	dashboard  string
 	logPath    string
 	debug      bool
+	cpuProfile string
 }
 
 // NewRootCommand builds the root command with all subcommands attached.
@@ -55,8 +57,19 @@ func NewRootCommand() *cobra.Command {
 			}
 			return nil
 		},
-		RunE: func(*cobra.Command, []string) error {
-			return errors.New("TUI is not implemented yet")
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if opts.cpuProfile != "" {
+				f, err := os.Create(opts.cpuProfile)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				if err := pprof.StartCPUProfile(f); err != nil {
+					return err
+				}
+				defer pprof.StopCPUProfile()
+			}
+			return runTUI(cmd.Context(), opts)
 		},
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
@@ -65,6 +78,8 @@ func NewRootCommand() *cobra.Command {
 	f.StringVarP(&opts.configPath, "config", "c", "", "path to config file (default: <user config dir>/smpmon/config.yaml)")
 	f.StringVar(&opts.logPath, "log-file", "", "path to log file (default: <user cache dir>/smpmon/smpmon.log)")
 	f.BoolVar(&opts.debug, "debug", false, "enable debug logging")
+	f.StringVar(&opts.cpuProfile, "cpuprofile", "", "write a CPU profile to this file")
+	_ = f.MarkHidden("cpuprofile")
 	cmd.Flags().StringVarP(&opts.dashboard, "dashboard", "d", "", "dashboard to open on start")
 
 	cmd.AddCommand(newVersionCommand(), newSnapshotCommand(), newConfigCommand(opts))

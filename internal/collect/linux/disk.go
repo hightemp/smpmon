@@ -21,6 +21,9 @@ import (
 // statfsTimeout bounds statfs on network filesystems that may hang.
 const statfsTimeout = 500 * time.Millisecond
 
+// mountsTTL is how often the mount table is re-read.
+const mountsTTL = 10 * time.Second
+
 // realNetFS lists filesystem types without a /dev source that are still
 // worth showing.
 var realNetFS = map[string]bool{
@@ -48,6 +51,10 @@ type Disks struct {
 	prevAt time.Time
 	dkeys  map[string]diskKeys
 	fkeys  map[string]fsKeys
+
+	// mountinfo is long on hosts with containers and changes rarely.
+	mountList []collect.Filesystem
+	mountsAt  time.Time
 
 	// statfs may block forever on a dead network mount; such mounts are
 	// skipped until the pending call returns.
@@ -77,10 +84,14 @@ func (d *Disks) Init() error {
 
 // Collect implements collect.Collector.
 func (d *Disks) Collect(ctx context.Context, s *metrics.Sample) error {
-	mounts, err := d.mounts()
-	if err != nil {
-		return err
+	if s.Time.Sub(d.mountsAt) >= mountsTTL || d.mountList == nil {
+		mounts, err := d.mounts()
+		if err != nil {
+			return err
+		}
+		d.mountList, d.mountsAt = mounts, s.Time
 	}
+	mounts := d.mountList
 	fss := make([]collect.Filesystem, 0, len(mounts))
 	for _, m := range mounts {
 		if ctx.Err() != nil {

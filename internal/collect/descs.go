@@ -21,6 +21,7 @@ import "github.com/hightemp/smpmon/internal/metrics"
 //	net.<if>.{rx_bps,tx_bps}                     bytes/s
 //	net.<if>.{rx_pps,tx_pps,rx_errs,tx_errs}     1/s
 //	net.<if>.{rx_total,tx_total}                 bytes
+//	net.total.{rx_bps,tx_bps,rx_total,tx_total}  sums over physical NICs
 //	proc.count, proc.threads, proc.running       count
 //	proc.<pid>.{cpu,mem}                         percent
 func init() {

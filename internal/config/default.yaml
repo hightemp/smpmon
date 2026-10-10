@@ -97,13 +97,15 @@ dashboards:
           weight: 2
         - row:
             - widget: graph
-              title: Packets/s
+              title: All NICs
+              weight: 2
               options:
-                metrics: ["net.*.rx_pps", "net.*.tx_pps"]
+                metrics: [net.total.rx_bps, net.total.tx_bps]
+                scale: log
             - widget: table
-              title: Interfaces
+              title: Since boot
               options:
-                metrics: ["net.*.rx_total", "net.*.tx_total"]
+                metrics: [net.total.rx_total, net.total.tx_total]
 
   server:
     title: Server

@@ -176,20 +176,23 @@ func (l *Local) runCollector(ctx context.Context, c collect.Collector) {
 	}
 	l.defaultOverride(c)
 
+	// Runs are aligned to wall-clock multiples of the interval so collectors
+	// with the same interval fire together and the UI redraws once per tick
+	// instead of once per collector.
 	var lastRun time.Time
 	timer := time.NewTimer(0)
 	defer timer.Stop()
 	for {
 		enabled, interval := l.schedule(name)
 		now := time.Now()
-		if enabled && now.Sub(lastRun) >= interval {
+		if enabled && (lastRun.IsZero() || !now.Before(nextTick(lastRun, interval))) {
 			lastRun = now
 			l.collectOnce(ctx, c, interval)
 		}
 
 		wait := interval
 		if enabled {
-			wait = max(time.Until(lastRun.Add(interval)), 0)
+			wait = max(time.Until(nextTick(lastRun, interval)), 0)
 		}
 		// Since Go 1.23 Reset discards any pending tick, so no draining is needed.
 		timer.Reset(wait)
@@ -200,6 +203,17 @@ func (l *Local) runCollector(ctx context.Context, c collect.Collector) {
 		case <-timer.C:
 		}
 	}
+}
+
+// nextTick returns the first multiple of interval after t, unless that is
+// less than half an interval away (then the one after), so a run that
+// happened just before a boundary is not immediately repeated.
+func nextTick(t time.Time, interval time.Duration) time.Time {
+	next := t.Truncate(interval).Add(interval)
+	if next.Sub(t) < interval/2 {
+		next = next.Add(interval)
+	}
+	return next
 }
 
 func (l *Local) collectOnce(ctx context.Context, c collect.Collector, interval time.Duration) {

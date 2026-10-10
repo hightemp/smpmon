@@ -237,6 +237,7 @@ func TestNet(t *testing.T) {
 	f.proc("net/route", "Iface\tDestination\tGateway\neth0\t00000000\t0102A8C0\n")
 	f.sys("class/net/eth0/operstate", "up\n")
 	f.sys("class/net/eth0/speed", "1000\n")
+	f.sys("class/net/eth0/device/vendor", "0x8086\n")
 	n := NewNet(f.fs)
 	t0 := time.Unix(1000, 0)
 	collectAt(t, n, t0)
@@ -247,6 +248,9 @@ func TestNet(t *testing.T) {
 	}
 	if v := value(t, s, "net.eth0.tx_bps"); v != 500 {
 		t.Errorf("tx %v", v)
+	}
+	if v := value(t, s, "net.total.rx_bps"); v != 1000 {
+		t.Errorf("total rx %v (loopback must not count)", v)
 	}
 	ifaces := s.Tables[collect.TableInterfaces].([]collect.NetInterface)
 	var eth collect.NetInterface
@@ -270,10 +274,13 @@ func TestProcs(t *testing.T) {
 	}
 	f.proc("42/stat", stat("100"))
 	f.proc("42/cmdline", "/usr/bin/app\x00--flag\x00")
+	f.proc("43/stat", "43 (sh) S 1 43 43 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5 0 0 0\n")
+	f.proc("43/cmdline", "sh\x00-c\x00cat <<EOF\nline\tx\x1b[31m\x00")
 	f.proc("42/io", "rchar: 1\nread_bytes: 1000\nwrite_bytes: 2000\n")
 	f.proc("7/stat", "7 (kworker/0:1) I 2 0 0 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5 0 0 0\n")
 	f.proc("7/cmdline", "")
-	f.proc("self", "")
+	f.proc("self/stat", "")
+	f.proc("12abc/stat", "")
 
 	p := NewProcs(f.fs)
 	if err := p.Init(); err != nil {
@@ -287,7 +294,7 @@ func TestProcs(t *testing.T) {
 	s := collectAt(t, p, t0.Add(2*time.Second))
 
 	procs := s.Tables[collect.TableProcesses].([]collect.Process)
-	if len(procs) != 2 {
+	if len(procs) != 3 {
 		t.Fatalf("procs %+v", procs)
 	}
 	var app, kw collect.Process
@@ -318,7 +325,12 @@ func TestProcs(t *testing.T) {
 	if v := value(t, s, "proc.42.cpu"); !near(v, 100) {
 		t.Fatalf("proc.42.cpu %v", v)
 	}
-	if v := value(t, s, keyProcCount); v != 2 {
+	for _, pr := range procs {
+		if pr.PID == 43 && pr.Cmdline != "sh -c cat <<EOF line x [31m" {
+			t.Fatalf("cmdline not sanitized: %q", pr.Cmdline)
+		}
+	}
+	if v := value(t, s, keyProcCount); v != 3 {
 		t.Fatalf("count %v", v)
 	}
 	if v := value(t, s, keyProcRunning); v != 3 {
@@ -364,6 +376,23 @@ func BenchmarkProcs(b *testing.B) {
 		s := metrics.Sample{Time: now.Add(time.Duration(i) * time.Second)}
 		if err := p.Collect(context.Background(), &s); err != nil {
 			b.Fatal(err)
+		}
+	}
+}
+
+func TestFieldsAndPIDs(t *testing.T) {
+	var dst [4][]byte
+	if n := fields([]byte("  a bb\tccc\n d e"), dst[:]); n != 4 || string(dst[2]) != "ccc" || string(dst[3]) != "d" {
+		t.Fatalf("fields %d %q", n, dst)
+	}
+	for in, want := range map[string]int32{"42\x00\x00": 42, "1\x00": 1} {
+		if got, ok := parsePID([]byte(in)); !ok || got != want {
+			t.Errorf("parsePID(%q) = %d %v", in, got, ok)
+		}
+	}
+	for _, bad := range []string{"self\x00", "\x00", "99999999999\x00", "1a\x00"} {
+		if _, ok := parsePID([]byte(bad)); ok {
+			t.Errorf("parsePID(%q) accepted", bad)
 		}
 	}
 }
