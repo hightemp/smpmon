@@ -16,6 +16,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 
+	"github.com/hightemp/smpmon/internal/alert"
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
@@ -37,6 +38,8 @@ type Options struct {
 	Source    source.Source
 	Procs     collect.ProcessController
 	Dashboard string // dashboard to open; empty uses the config default
+	// Alerts evaluates alert rules; nil without rules.
+	Alerts *alert.Engine
 }
 
 // dashboard is an instantiated config dashboard.
@@ -66,6 +69,8 @@ type Model struct {
 	dialog   dialog
 	edit     *editor   // layout editor, nil when not editing
 	hist     *histView // shown history window, nil when live
+	alertSeq uint64    // last alert event shown as a toast
+	alerted  map[string]map[string]alert.Level
 	status   string
 	statusAt time.Time
 
@@ -196,6 +201,7 @@ func (m *Model) applyConfig(cfg *config.Config) error {
 		Procs:     m.hosts[m.cur].Procs,
 		Host:      m.hosts[m.cur].Name,
 		Hosts:     m.hosts,
+		Alerts:    m.opts.Alerts,
 		NumCPU:    runtime.NumCPU(),
 		Keys:      keys,
 	}
@@ -421,6 +427,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if fmt.Sprint(m.unsupported()) != m.unsupSig {
 			m.relayout()
 		}
+		m.pollAlerts()
 		return m, heartbeat()
 
 	case themeMsg:
@@ -445,6 +452,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleMouse(msg)
 	}
 	return m, nil
+}
+
+// pollAlerts shows new alert events as toasts and refreshes which widgets
+// to highlight.
+func (m *Model) pollAlerts() {
+	if m.opts.Alerts == nil {
+		return
+	}
+	evs, seq := m.opts.Alerts.Events(m.alertSeq)
+	m.alertSeq = seq
+	for _, ev := range evs {
+		if slices.Contains(ev.Rule.Notify, "tui") {
+			prefix := "⚠ "
+			if ev.Resolved {
+				prefix = "✓ "
+			}
+			m.setStatus(prefix + ev.Summary())
+		}
+	}
+	m.alerted = alertedCollectors(m.opts.Alerts)
 }
 
 func firstLine(s string) string {
@@ -728,6 +755,9 @@ func (m *Model) drawWidget(screen [][]segment, w Widget, n *config.Node, r layou
 	}
 	color := t.BoxColor(w.Kind())
 	titleColor := t.Title
+	if lvl, ok := alertLevelFor(m.alerted, wctx.Host, w); ok && !wctx.History {
+		color = levelColor(t, lvl)
+	}
 	if focused {
 		color = t.Title
 		titleColor = t.Hotkey
@@ -810,6 +840,12 @@ func (m *Model) topBar() string {
 	}
 	if m.hist != nil {
 		status = strings.TrimSuffix(m.histLabel()+sep+status, sep)
+	}
+	if m.opts.Alerts != nil {
+		if act := m.opts.Alerts.Active(); len(act) > 0 {
+			badge := fg(levelColor(t, act[0].Rule.Level), bold(fmt.Sprintf("⚠ %d", len(act))))
+			status = strings.TrimSuffix(badge+sep+status, sep)
+		}
 	}
 	// Optional parts, dropped from the front when space runs out.
 	optional := []string{

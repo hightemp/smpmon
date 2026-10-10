@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/hightemp/smpmon/internal/alert"
 	"github.com/hightemp/smpmon/internal/buildinfo"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/collect/platform"
@@ -144,6 +145,11 @@ func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error 
 			return err
 		}
 	}
+	engine, err := setupAlerts(ctx, cfg, hosts, &wg)
+	if err != nil {
+		cancel()
+		return err
+	}
 	for _, h := range hosts {
 		done := startSource(ctx, h.Source)
 		wg.Add(1)
@@ -171,6 +177,7 @@ func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error 
 		Hosts:      hosts,
 		Host:       current,
 		Dashboard:  opts.dashboard,
+		Alerts:     engine,
 	})
 }
 
@@ -305,4 +312,41 @@ func safeName(s string) string {
 		}
 		return '_'
 	}, s)
+}
+
+// setupAlerts starts the alert engine over all hosts, or returns nil without
+// rules. Collectors that rules depend on keep running.
+func setupAlerts(ctx context.Context, cfg *config.Config, hosts []ui.HostSource, wg *sync.WaitGroup) (*alert.Engine, error) {
+	if len(cfg.Alerts) == 0 {
+		return nil, nil
+	}
+	rules, err := alert.Compile(cfg.Alerts)
+	if err != nil {
+		return nil, err
+	}
+	engine := alert.NewEngine(rules, &alert.Dispatcher{})
+	for i := range hosts {
+		h := &hosts[i]
+		engine.AddHost(h.Name, h.Source.Store())
+		for _, r := range rules {
+			if len(r.Hosts) > 0 && !slices.Contains(r.Hosts, h.Name) {
+				continue
+			}
+			need := collect.CollectorsFor([]string{r.Selector.String()})
+			if need == nil {
+				need = allCollectors
+			}
+			for _, c := range need {
+				if !slices.Contains(h.Keep, c) {
+					h.Keep = append(h.Keep, c)
+				}
+			}
+		}
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		engine.Run(ctx)
+	}()
+	return engine, nil
 }

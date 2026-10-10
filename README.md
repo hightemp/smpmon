@@ -27,7 +27,9 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 
 - History on disk (optional): scroll back through hours or days of data, including the top processes at the time
 
-Planned: alerts, Prometheus export.
+- Alerts: threshold rules with notifications in the TUI, on the desktop, through a command or a webhook
+
+Planned: Prometheus export and a headless mode.
 
 ## Install
 
@@ -173,6 +175,33 @@ history:
 
 Data is kept at three resolutions (every second, 10-second and 1-minute averages), and the coarsest one that still covers the window is used. Remote hosts are recorded too, each in its own directory under `~/.cache/smpmon/history/`. A broad default set of metrics is recorded; `history.metrics` takes selectors to change it. The collectors needed for recording keep running even when no widget shows their data. The files are compact: the column-wise compressed format stores slowly changing metrics in about a byte per value.
 
+## Alerts
+
+```yaml
+alerts:
+  - name: disk-full
+    expr: "disk.fs.*.used_percent > 90"   # selector, >, >=, <, <=, == or !=, a number
+    for: 1m                               # must hold this long
+    level: crit                           # warn (default) or crit
+    notify: [tui, desktop, webhook]
+    webhook: https://hooks.example.com/smpmon
+  - name: memory
+    expr: "mem.available < 1GiB"          # k, M, G, Ki, Mi, Gi suffixes
+    hysteresis: 256Mi                     # how far past the threshold to resolve
+    notify: [tui, exec]
+    exec: 'logger "$SMPMON_ALERT_MESSAGE"'
+    hosts: [web1, db]                     # default: every host
+```
+
+Every series a selector matches is a separate alert, per host. A disk rule fires for the disk that fills up, and it resolves when that disk drops below the threshold or disappears.
+
+- **TUI.** A message appears, a `⚠ N` badge stays in the top bar, and widgets showing the affected data get a red or yellow border. The `alerts` widget lists firing alerts and recent events.
+- **Desktop.** Notifications go through `notify-send` on Linux and the notification center on macOS. On Windows a toast is shown; this hasn't been tested yet.
+- **Exec.** The command runs in `sh -c` (`cmd /C` on Windows) with `SMPMON_ALERT`, `SMPMON_ALERT_STATE` (firing or resolved), `SMPMON_ALERT_LEVEL`, `SMPMON_ALERT_HOST`, `SMPMON_ALERT_METRIC`, `SMPMON_ALERT_VALUE`, `SMPMON_ALERT_THRESHOLD` and `SMPMON_ALERT_MESSAGE` in its environment.
+- **Webhook.** A JSON object with the same fields is POSTed to the URL.
+
+After an alert resolves, it doesn't fire again for `cooldown` (default 1m). Stale data, for example from an offline host, neither fires nor resolves alerts.
+
 ## Configuration
 
 The config lives in `~/.config/smpmon/config.yaml` (`smpmon config path` prints the exact location). It only needs to contain what you change: it is merged over the built-in defaults, which `smpmon config default` prints with comments. Edits are applied while smpmon is running.
@@ -286,6 +315,8 @@ A theme only needs the colors it changes; the rest come from the theme named in 
 | `stat` | `metric`, `sparkline`, `gradient` |
 | `table` | `metrics` (selectors) |
 | `text` | `text` (with `{hostname}` `{os}` `{kernel}` `{uptime}` `{time}` `{date}`), `align` |
+| `hosts` | — (overview of all hosts) |
+| `alerts` | — (firing alerts and recent events) |
 | `gpu` | `index`, `mode` |
 | `sensors` | `filter`, `fans` (bool) |
 | `battery` | — |

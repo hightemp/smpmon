@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/hightemp/smpmon/internal/alert"
 	"github.com/hightemp/smpmon/internal/chart"
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/config"
@@ -33,6 +34,8 @@ type Context struct {
 	// History is set while Store holds a recorded time window instead of
 	// live data: graphs then fit the whole window into their width.
 	History bool
+	// Alerts is the alert engine, nil without rules.
+	Alerts *alert.Engine
 }
 
 // series reads up to n values of k for a graph n slots wide.
@@ -127,6 +130,7 @@ var metas = map[string]widgetMeta{
 	"table":   {"table of metrics", reflect.TypeFor[tableOptions](), "metrics: ['mem.*']"},
 	"text":    {"text with host info", reflect.TypeFor[textOptions](), ""},
 	"hosts":   {"overview of all hosts", reflect.TypeFor[struct{}](), ""},
+	"alerts":  {"firing alerts and recent events", reflect.TypeFor[struct{}](), ""},
 }
 
 // KnownWidget reports whether a widget type exists.
@@ -180,6 +184,9 @@ func windowSamples(ctx *Context, window time.Duration) int {
 // options. It complements config.Config.Validate.
 func CheckConfig(cfg *config.Config) error {
 	if err := cfg.Validate(KnownWidget); err != nil {
+		return err
+	}
+	if _, err := alert.Compile(cfg.Alerts); err != nil {
 		return err
 	}
 	if _, err := LookupTheme(cfg.General.Theme); err != nil {

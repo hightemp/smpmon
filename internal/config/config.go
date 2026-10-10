@@ -33,6 +33,7 @@ type Config struct {
 	Keys       Keys                       `yaml:"keys"`
 	Hosts      map[string]Host            `yaml:"hosts"`
 	History    History                    `yaml:"history"`
+	Alerts     []AlertRule                `yaml:"alerts"`
 	Dashboards Dashboards                 `yaml:"dashboards"`
 }
 
@@ -53,6 +54,21 @@ type History struct {
 	} `yaml:"retention"`
 	// MaxSizeMB caps the directory size per host.
 	MaxSizeMB int `yaml:"max_size_mb"`
+}
+
+// AlertRule is a threshold alert.
+type AlertRule struct {
+	Name string `yaml:"name"`
+	// Expr is "<metric selector> <op> <number>", e.g. "cpu.total.usage > 90".
+	Expr       string        `yaml:"expr"`
+	For        time.Duration `yaml:"for,omitempty"`
+	Level      string        `yaml:"level,omitempty"` // warn (default) or crit
+	Hysteresis float64       `yaml:"hysteresis,omitempty"`
+	Cooldown   time.Duration `yaml:"cooldown,omitempty"`
+	Hosts      []string      `yaml:"hosts,omitempty"`  // default: all
+	Notify     []string      `yaml:"notify,omitempty"` // tui, desktop, exec, webhook
+	Exec       string        `yaml:"exec,omitempty"`
+	Webhook    string        `yaml:"webhook,omitempty"`
 }
 
 // Host is a remote machine to monitor, reached over SSH or a network agent.
@@ -311,6 +327,9 @@ func parse(data []byte, base *Config) (*Config, error) {
 			err = val.Decode(&cfg.Hosts)
 		case "history":
 			err = val.Decode(&cfg.History)
+		case "alerts":
+			cfg.Alerts = nil // user rules replace the defaults
+			err = val.Decode(&cfg.Alerts)
 		case "dashboards":
 			var ds Dashboards
 			if err = val.Decode(&ds); err == nil {
