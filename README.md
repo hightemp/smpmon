@@ -29,7 +29,7 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 
 - Alerts: threshold rules with notifications in the TUI, on the desktop, through a command or a webhook
 
-Planned: Prometheus export and a headless mode.
+- Export: a Prometheus endpoint, JSON lines, and a headless mode that records history and evaluates alerts without the UI
 
 ## Install
 
@@ -73,6 +73,9 @@ smpmon -d procs           # open a specific dashboard
 smpmon -c config.yaml     # use a specific config file
 smpmon connect user@server            # monitor a server over SSH
 smpmon connect --install web1 db      # install smpmon there first
+smpmon --prometheus :9101             # also serve /metrics while the UI runs
+smpmon headless --prometheus :9101    # no UI: history, alerts, export
+smpmon stream -s 'cpu.total.*' -i 2s  # JSON lines
 smpmon snapshot           # print all current metrics once
 smpmon snapshot -s 'net.total.*' --json
 smpmon config default     # print the default config with comments
@@ -201,6 +204,28 @@ Every series a selector matches is a separate alert, per host. A disk rule fires
 - **Webhook.** A JSON object with the same fields is POSTed to the URL.
 
 After an alert resolves, it doesn't fire again for `cooldown` (default 1m). Stale data, for example from an offline host, neither fires nor resolves alerts.
+
+## Export and headless mode
+
+`smpmon headless` runs without the UI. It collects from this machine and the configured hosts, records history and evaluates alerts if the config enables them, and with `--prometheus ADDR` serves the current values:
+
+```sh
+smpmon headless --prometheus :9101 -s 'cpu.**' -s 'mem.*'   # -s limits what is exported
+```
+
+Metric names follow Prometheus conventions, and the variable parts of keys become labels:
+
+```
+smpmon_cpu_usage_percent 7.1
+smpmon_cpu_core_usage_percent{core="3"} 12
+smpmon_filesystem_used_percent{mount="/"} 96.1
+smpmon_network_rx_bytes_per_second{interface="eth0"} 1320
+smpmon_network_rx_bytes_total{interface="eth0"} 2.05e+11
+smpmon_sensor_temperature_celsius{chip="coretemp",sensor="Package id 0"} 41
+smpmon_container_cpu_percent{container="redis"} 1.1
+```
+
+Remote hosts add a `host` label. `smpmon --prometheus :9101` serves the endpoint while the UI runs; it then exports whatever is being collected for the UI. `smpmon stream` prints one JSON object per line every `--interval`, and `--host` streams remote hosts instead of this machine.
 
 ## Configuration
 

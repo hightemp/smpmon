@@ -5,11 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,6 +23,7 @@ import (
 	"github.com/hightemp/smpmon/internal/collect"
 	"github.com/hightemp/smpmon/internal/collect/platform"
 	"github.com/hightemp/smpmon/internal/config"
+	"github.com/hightemp/smpmon/internal/export"
 	"github.com/hightemp/smpmon/internal/history"
 	"github.com/hightemp/smpmon/internal/metrics"
 	"github.com/hightemp/smpmon/internal/remote"
@@ -88,15 +93,23 @@ func expandHome(p string) string {
 	return p
 }
 
-// runTUI shows this machine and the given remote hosts. With no targets,
-// all hosts from the config are added. The first target is shown first.
-func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+// runtime is everything started for a session: sources, history, alerts.
+type runtime struct {
+	cfg     *config.Config
+	path    string
+	hosts   []ui.HostSource
+	current string
+	engine  *alert.Engine
+	stop    func()
+}
+
+// start builds this machine and the remote hosts (targets, or every host
+// from the config when targets is nil) and starts collection, history and
+// alerts. Call stop when done.
+func start(ctx context.Context, opts *rootOptions, targets []remoteHost) (*runtime, context.Context, error) {
 	cfg, path, err := loadConfig(opts.configPath)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var collectors []collect.Collector
 	for _, c := range platform.Collectors() {
@@ -105,7 +118,7 @@ func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error 
 		}
 	}
 	if len(collectors) == 0 {
-		return errors.New("no collectors available on this platform yet")
+		return nil, nil, errors.New("no collectors available on this platform yet")
 	}
 	local := ui.HostSource{
 		Name: "local",
@@ -116,46 +129,31 @@ func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error 
 		}, collectors),
 		Procs: platform.ProcessController(),
 	}
-
 	remotes := targets
 	if remotes == nil {
 		for _, name := range cfg.HostNames() {
 			remotes = append(remotes, remoteHost{name, cfg.Hosts[name]})
 		}
 	}
-	var hosts []ui.HostSource
+	rt := &runtime{cfg: cfg, path: path, current: "local"}
 	for _, r := range remotes {
 		c, err := newRemote(cfg, r)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
-		hosts = append(hosts, ui.HostSource{Name: r.name, Source: c, Procs: c.ProcessController()})
+		rt.hosts = append(rt.hosts, ui.HostSource{Name: r.name, Source: c, Procs: c.ProcessController()})
 	}
-	current := "local"
-	if targets != nil && len(hosts) > 0 {
-		current = hosts[0].Name
+	if targets != nil && len(rt.hosts) > 0 {
+		rt.current = rt.hosts[0].Name
 	}
-	hosts = append([]ui.HostSource{local}, hosts...)
+	rt.hosts = append([]ui.HostSource{local}, rt.hosts...)
 
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
-	if cfg.History.Enabled {
-		if err := setupHistory(ctx, cfg, hosts, &wg); err != nil {
-			cancel()
-			return err
-		}
-	}
-	engine, err := setupAlerts(ctx, cfg, hosts, &wg)
-	if err != nil {
-		cancel()
-		return err
-	}
-	for _, h := range hosts {
-		done := startSource(ctx, h.Source)
-		wg.Add(1)
-		go func() { defer wg.Done(); <-done }()
-	}
-	defer func() {
+	rt.stop = func() {
 		cancel()
 		done := make(chan struct{})
 		go func() { wg.Wait(); close(done) }()
@@ -163,22 +161,199 @@ func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error 
 		case <-done:
 		case <-time.After(2 * time.Second):
 		}
-	}()
+	}
+	if cfg.History.Enabled {
+		if err := setupHistory(ctx, cfg, rt.hosts, &wg); err != nil {
+			rt.stop()
+			return nil, nil, err
+		}
+	}
+	if rt.engine, err = setupAlerts(ctx, cfg, rt.hosts, &wg); err != nil {
+		rt.stop()
+		return nil, nil, err
+	}
+	for _, h := range rt.hosts {
+		done := startSource(ctx, h.Source)
+		wg.Add(1)
+		go func() { defer wg.Done(); <-done }()
+	}
+	return rt, ctx, nil
+}
 
+func (rt *runtime) exportHosts() []export.Host {
+	out := make([]export.Host, len(rt.hosts))
+	for i, h := range rt.hosts {
+		out[i] = export.Host{Name: h.Name, Store: h.Source.Store()}
+	}
+	return out
+}
+
+// serveMetrics starts the Prometheus endpoint in the background.
+func serveMetrics(ctx context.Context, addr string, rt *runtime, sels []metrics.Selector) error {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("prometheus endpoint: %w", err)
+	}
+	srv := &http.Server{Handler: export.Handler(rt.exportHosts, sels), ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Close()
+	}()
+	go func() { _ = srv.Serve(l) }()
+	slog.Info("prometheus endpoint", "addr", l.Addr().String())
+	return nil
+}
+
+// runTUI shows this machine and the given remote hosts. With no targets,
+// all hosts from the config are added. The first target is shown first.
+func runTUI(ctx context.Context, opts *rootOptions, targets []remoteHost) error {
+	rt, ctx, err := start(ctx, opts, targets)
+	if err != nil {
+		return err
+	}
+	defer rt.stop()
+	if opts.prometheus != "" {
+		if err := serveMetrics(ctx, opts.prometheus, rt, nil); err != nil {
+			return err
+		}
+	}
 	// Only watch a config file that exists; a missing default is fine.
 	watch := ""
-	if _, err := os.Stat(path); err == nil {
-		watch = path
+	if _, err := os.Stat(rt.path); err == nil {
+		watch = rt.path
 	}
 	return ui.Run(ctx, ui.Options{
-		Config:     cfg,
+		Config:     rt.cfg,
 		ConfigPath: watch,
-		SavePath:   path,
-		Hosts:      hosts,
-		Host:       current,
+		SavePath:   rt.path,
+		Hosts:      rt.hosts,
+		Host:       rt.current,
 		Dashboard:  opts.dashboard,
-		Alerts:     engine,
+		Alerts:     rt.engine,
 	})
+}
+
+func parseSelectors(patterns []string) ([]metrics.Selector, error) {
+	out := make([]metrics.Selector, 0, len(patterns))
+	for _, p := range patterns {
+		s, err := metrics.ParseSelector(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// demandFor makes every host collect what the selectors need (everything
+// for no selectors), plus what history and alerts keep.
+func demandFor(rt *runtime, patterns []string) {
+	need := collect.CollectorsFor(patterns)
+	for _, h := range rt.hosts {
+		if len(patterns) == 0 || need == nil {
+			h.Source.SetDemand(nil)
+			continue
+		}
+		d := slices.Clone(need)
+		for _, k := range h.Keep {
+			if !slices.Contains(d, k) {
+				d = append(d, k)
+			}
+		}
+		h.Source.SetDemand(d)
+	}
+}
+
+func newHeadlessCommand(opts *rootOptions) *cobra.Command {
+	var (
+		promAddr string
+		selects  []string
+	)
+	cmd := &cobra.Command{
+		Use:   "headless",
+		Short: "Collect without a UI: history, alerts and export",
+		Long: `Run without the terminal UI: collect from this machine and the hosts in
+the config, record history and evaluate alerts as configured, and serve a
+Prometheus endpoint with --prometheus. Stops on Ctrl+C or SIGTERM.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, stopSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stopSignals()
+			sels, err := parseSelectors(selects)
+			if err != nil {
+				return err
+			}
+			rt, ctx, err := start(ctx, opts, nil)
+			if err != nil {
+				return err
+			}
+			defer rt.stop()
+			if !rt.cfg.History.Enabled && rt.engine == nil && promAddr == "" {
+				return errors.New("nothing to do: enable history or alerts in the config, or pass --prometheus")
+			}
+			if promAddr != "" {
+				if err := serveMetrics(ctx, promAddr, rt, sels); err != nil {
+					return err
+				}
+				demandFor(rt, selects)
+			} else {
+				for _, h := range rt.hosts {
+					h.Source.SetDemand(slices.Clone(h.Keep))
+				}
+			}
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "smpmon headless: %d host(s), history %v, %d alert rule(s), prometheus %q\n",
+				len(rt.hosts), rt.cfg.History.Enabled, len(rt.cfg.Alerts), promAddr)
+			<-ctx.Done()
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&promAddr, "prometheus", "", "serve /metrics on this address, e.g. :9101")
+	cmd.Flags().StringSliceVarP(&selects, "select", "s", nil, "export only metrics matching these selectors")
+	return cmd
+}
+
+func newStreamCommand(opts *rootOptions) *cobra.Command {
+	var (
+		interval time.Duration
+		selects  []string
+		hosts    []string
+	)
+	cmd := &cobra.Command{
+		Use:   "stream",
+		Short: "Print metrics as JSON lines (NDJSON) every interval",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx, stopSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stopSignals()
+			sels, err := parseSelectors(selects)
+			if err != nil {
+				return err
+			}
+			cfg, _, err := loadConfig(opts.configPath)
+			if err != nil {
+				return err
+			}
+			targets := []remoteHost{}
+			if len(hosts) > 0 {
+				targets = resolveTargets(cfg, hosts)
+			}
+			rt, ctx, err := start(ctx, opts, targets)
+			if err != nil {
+				return err
+			}
+			defer rt.stop()
+			if len(hosts) > 0 {
+				rt.hosts = rt.hosts[1:] // only the requested hosts
+			}
+			demandFor(rt, selects)
+			return export.Stream(ctx, cmd.OutOrStdout(), rt.exportHosts(), sels, interval)
+		},
+	}
+	cmd.Flags().DurationVarP(&interval, "interval", "i", time.Second, "time between records")
+	cmd.Flags().StringSliceVarP(&selects, "select", "s", nil, "metrics to include (selectors)")
+	cmd.Flags().StringSliceVar(&hosts, "host", nil, "stream these remote hosts instead of this machine")
+	cmd.Flags().Bool("json", true, "JSON lines (the only format)")
+	return cmd
 }
 
 func newConnectCommand(opts *rootOptions) *cobra.Command {

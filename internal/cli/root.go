@@ -20,6 +20,7 @@ type rootOptions struct {
 	logPath    string
 	debug      bool
 	cpuProfile string
+	prometheus string
 }
 
 // NewRootCommand builds the root command with all subcommands attached.
@@ -81,9 +82,10 @@ func NewRootCommand() *cobra.Command {
 	f.StringVar(&opts.cpuProfile, "cpuprofile", "", "write a CPU profile to this file")
 	_ = f.MarkHidden("cpuprofile")
 	cmd.Flags().StringVarP(&opts.dashboard, "dashboard", "d", "", "dashboard to open on start")
+	cmd.Flags().StringVar(&opts.prometheus, "prometheus", "", "also serve collected metrics on this address, e.g. :9101")
 
 	cmd.AddCommand(newVersionCommand(), newSnapshotCommand(), newConfigCommand(opts), newFrameCommand(opts), newThemeCommand(),
-		newAgentCommand(), newConnectCommand(opts))
+		newAgentCommand(), newConnectCommand(opts), newHeadlessCommand(opts), newStreamCommand(opts))
 	return cmd
 }
 
