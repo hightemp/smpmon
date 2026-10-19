@@ -1,6 +1,10 @@
 # smpmon
 
 [![CI](https://github.com/hightemp/smpmon/actions/workflows/ci.yml/badge.svg)](https://github.com/hightemp/smpmon/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/hightemp/smpmon)](https://github.com/hightemp/smpmon/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/hightemp/smpmon/total)](https://github.com/hightemp/smpmon/releases)
+[![Go version](https://img.shields.io/github/go-mod/go-version/hightemp/smpmon)](go.mod)
+![Platforms](https://img.shields.io/badge/platforms-linux%20%7C%20macOS%20%7C%20windows-informational)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 <img src="https://asdertasd.site/counter/smpmon" alt="smpmon views">
 
