@@ -128,7 +128,7 @@ In the network widget, `b` and `n` switch the interface. In the Docker widget, `
 
 ![smpmon showing the GPU tab](docs/gpu.svg)
 
-The GPU tab works like [nvtop](https://github.com/Syllo/nvtop). Each card gets a graph of GPU usage and memory use, with its readings above: temperature, power and power limit, clocks, fan, encoder and decoder load, PCIe link and P-state. When the card is held back by power or heat, the reason shows up in yellow, for example `⚠ power cap`. Below are graphs of temperature, power, clocks, encoder/decoder, PCIe throughput and fan, and the processes using the GPUs, with their GPU load, video memory, encoder and decoder load. The process table works like the main one: sort, filter, kill and renice.
+The GPU tab works like [nvtop](https://github.com/Syllo/nvtop). Each card gets two graphs, GPU usage and memory use, side by side (stacked in narrow terminals), with its readings above: temperature, power and power limit, clocks, fan, encoder and decoder load, PCIe link and P-state. When the card is held back by power or heat, the reason shows up in yellow, for example `⚠ power cap`. Below are graphs of temperature, power, clocks, encoder/decoder, PCIe throughput and fan, and the processes using the GPUs, with their GPU load, video memory, encoder and decoder load. The process table works like the main one: sort, filter, kill and renice.
 
 With several GPUs, all cards are shown one below the other. `u` picks one card for every GPU widget and graph on the screen, and pressing it after the last card goes back to all of them. In your own dashboards, `{gpu}` in a graph metric follows that choice (`gpu.{gpu}.temp`), and `index:` pins a `gpu` widget to one card.
 

@@ -178,46 +178,52 @@ func joinFit(parts []string, sep string, w int) string {
 	return out
 }
 
-// renderGraphs draws one card nvtop style: headline, readings, then one
-// graph with GPU usage and memory use.
+// renderGraphs draws one card nvtop style: headline, readings, then a GPU
+// usage graph and a memory graph, side by side or, when narrow, stacked.
 func (g *gpuWidget) renderGraphs(ctx *Context, gpu collect.GPU, w, h int) []string {
 	t := ctx.Theme
 	out := []string{gpuHeadline(ctx, gpu, w)}
 	if info := gpuReadings(ctx, gpu); len(info) > 0 {
 		out = append(out, joinFit(info, "  ", w))
 	}
-	gr := chart.Graph{Width: w, Height: h - len(out), Mode: graphMode(ctx, g.opts.Mode), Max: 100, Style: chart.StyleLine}
+	gh := h - len(out)
 	idx := strconv.Itoa(gpu.Index)
-	g.buf = ctx.series(metrics.NewKey("gpu", idx, "util"), g.buf[:0], gr.Slots())
-	g.memBuf = ctx.series(metrics.NewKey("gpu", idx, "mem_used_percent"), g.memBuf[:0], gr.Slots())
-	// Fixed colors rather than gradients: both lines are often low, where
-	// the gradients look alike.
-	gpuColor, memColor := seriesPalette[0], seriesPalette[1]
-	gr.Series = []chart.Series{
-		{Values: g.memBuf, Gradient: chart.Gradient{memColor}},
-		{Values: g.buf, Gradient: chart.Gradient{gpuColor}},
-	}
-	c := gr.Render()
-	legend := fg(gpuColor, "■ ") + fg(t.Title, "GPU ")
+	gpuLabel := fg(t.Title, "GPU ")
 	if gpu.Util >= 0 {
-		legend += fg(t.Fg, metrics.FormatPercent(gpu.Util))
+		gpuLabel += fg(t.Fg, metrics.FormatPercent(gpu.Util))
 	}
-	legend += fg(memColor, "  ■ ") + fg(t.Title, "VRAM ")
+	memLabel := fg(t.Title, "VRAM ")
 	if gpu.MemTotal > 0 {
-		legend += fg(t.Fg, metrics.FormatBytes(float64(gpu.MemUsed))+"/"+metrics.FormatBytes(float64(gpu.MemTotal)))
+		memLabel += fg(t.Fg, metrics.FormatBytes(float64(gpu.MemUsed))+"/"+metrics.FormatBytes(float64(gpu.MemTotal)))
 	}
-	lines := c.Lines()
-	if len(lines) > 0 {
-		// The legend replaces the left part of the top row; the graph shows
+	graph := func(key string, buf *[]float64, grad chart.Gradient, label string, gw, gh int) []string {
+		gr := chart.Graph{Width: gw, Height: gh, Mode: graphMode(ctx, g.opts.Mode), Max: 100}
+		*buf = ctx.series(metrics.NewKey("gpu", idx, key), (*buf)[:0], gr.Slots())
+		gr.Series = []chart.Series{{Values: *buf, Gradient: grad}}
+		lines := gr.Render().Lines()
+		// The label replaces the left part of the top row; the graph shows
 		// through to its right.
-		lw := width(legend)
-		if lw+1 < w {
-			lines[0] = legend + " " + cutLeft(lines[0], lw+1)
+		if lw := width(label); lw+1 < gw {
+			lines[0] = label + " " + cutLeft(lines[0], lw+1)
 		} else {
-			lines[0] = fitEllipsis(legend, w)
+			lines[0] = fitEllipsis(label, gw)
 		}
+		return lines
 	}
-	return block(append(out, lines...), w, h)
+	// Stacked graphs need two rows each to be more than their labels.
+	if w >= 80 || gh < 4 {
+		lw := (w - 1) / 2
+		left := graph("util", &g.buf, t.CPU, gpuLabel, lw, gh)
+		right := graph("mem_used_percent", &g.memBuf, t.Mem, memLabel, w-lw-1, gh)
+		for i := range left {
+			out = append(out, left[i]+" "+right[i])
+		}
+	} else {
+		top := gh / 2
+		out = append(out, graph("util", &g.buf, t.CPU, gpuLabel, w, top)...)
+		out = append(out, graph("mem_used_percent", &g.memBuf, t.Mem, memLabel, w, gh-top)...)
+	}
+	return block(out, w, h)
 }
 
 // renderMeters draws one card as bars, readings and a usage graph.

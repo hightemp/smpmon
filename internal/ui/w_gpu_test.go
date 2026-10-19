@@ -119,6 +119,31 @@ func TestGPUDashboard(t *testing.T) {
 		t.Error("third u should show all GPUs")
 	}
 
+	// GPU usage and memory get separate graphs: side by side when wide,
+	// stacked when narrow.
+	for _, l := range strings.Split(frame, "\n") {
+		if strings.Contains(l, "GPU 40.0%") && !strings.Contains(l, "VRAM 4.00 GiB") {
+			t.Errorf("wide: GPU and VRAM graphs not side by side: %q", l)
+		}
+	}
+	m.Update(tea.WindowSizeMsg{Width: 70, Height: 40})
+	m.Update(key("u")) // one card, so it has room for stacked graphs
+	narrow := strings.Split(plainFrame(t, m, 70, 40), "\n")
+	m.Update(key("u"))
+	m.Update(key("u"))
+	gpuRow := slices.IndexFunc(narrow, func(l string) bool { return strings.Contains(l, "GPU 40.0%") })
+	memRow := slices.IndexFunc(narrow, func(l string) bool { return strings.Contains(l, "VRAM 4.00 GiB") })
+	if gpuRow < 0 || memRow <= gpuRow+1 {
+		t.Errorf("narrow: GPU graph at row %d, VRAM graph at row %d", gpuRow, memRow)
+	}
+
+	// Two cards in a short widget: side by side even when narrow.
+	for _, l := range strings.Split(plainFrame(t, m, 70, 40), "\n") {
+		if strings.Contains(l, "GPU 40.0%") && !strings.Contains(l, "VRAM") {
+			t.Errorf("narrow two cards: %q", l)
+		}
+	}
+
 	// Small terminals use the variant without detail graphs.
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	frame = plainFrame(t, m, 100, 30)
