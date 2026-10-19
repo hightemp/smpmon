@@ -19,11 +19,11 @@ type stream struct {
 
 	mu      sync.Mutex
 	lastReq time.Time
-	running bool
-	cancel  context.CancelFunc
-	started time.Time
-	lines   int  // lines read from the current run
-	failed  bool // the command exited quickly without output: don't retry
+	gen     int                // number of the current run
+	ctx     context.Context    // of the current run; nil before the first
+	cancel  context.CancelFunc // of the current run
+	running bool               // the current run hasn't ended
+	failed  bool               // the command exited quickly without output: don't retry
 }
 
 // idleStop stops a stream when nobody has asked for its data for this long.
@@ -33,8 +33,9 @@ func newStream(bin string, onLine func(string), args ...string) *stream {
 	return &stream{bin: bin, args: args, onLine: onLine}
 }
 
-// touch records demand and starts the command if it isn't running. It
-// reports false once the command has proven unusable.
+// touch records demand and starts the command if it isn't running, or if
+// the current run is already stopping. It reports false once the command
+// has proven unusable.
 func (s *stream) touch() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -42,10 +43,13 @@ func (s *stream) touch() bool {
 	if s.failed {
 		return false
 	}
-	if !s.running {
+	if !s.running || s.ctx.Err() != nil {
+		// A stopping run is left to finish; its end no longer affects the
+		// stream state because the generation has moved on.
 		ctx, cancel := context.WithCancel(context.Background())
-		s.cancel, s.running, s.started, s.lines = cancel, true, time.Now(), 0
-		go s.run(ctx)
+		s.gen++
+		s.ctx, s.cancel, s.running = ctx, cancel, true
+		go s.run(ctx, cancel, s.gen)
 	}
 	return true
 }
@@ -56,17 +60,22 @@ func (s *stream) isRunning() bool {
 	return s.running
 }
 
-func (s *stream) run(ctx context.Context) {
+func (s *stream) run(ctx context.Context, cancel context.CancelFunc, gen int) {
+	started, lines := time.Now(), 0
 	defer func() {
+		stopped := ctx.Err() != nil // by us: idle, close or a newer run
+		cancel()
 		s.mu.Lock()
+		defer s.mu.Unlock()
+		if gen != s.gen {
+			return // a newer run took over
+		}
 		// A command that dies within seconds without printing anything is
 		// unsupported here (e.g. pmon on Windows WDDM): stop retrying.
-		if ctx.Err() == nil && s.lines == 0 && time.Since(s.started) < 5*time.Second {
+		if !stopped && lines == 0 && time.Since(started) < 5*time.Second {
 			s.failed = true
 		}
 		s.running = false
-		s.cancel()
-		s.mu.Unlock()
 	}()
 	cmd := exec.CommandContext(ctx, s.bin, s.args...)
 	dieWithParent(cmd)
@@ -90,19 +99,18 @@ func (s *stream) run(ctx context.Context) {
 				return
 			case <-t.C:
 				s.mu.Lock()
-				if time.Since(s.lastReq) > idleStop {
-					s.cancel()
-				}
+				idle := time.Since(s.lastReq) > idleStop
 				s.mu.Unlock()
+				if idle {
+					cancel()
+				}
 			}
 		}
 	}()
 
 	sc := bufio.NewScanner(out)
 	for sc.Scan() {
-		s.mu.Lock()
-		s.lines++
-		s.mu.Unlock()
+		lines++
 		s.onLine(sc.Text())
 	}
 }

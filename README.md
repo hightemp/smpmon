@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/hightemp/smpmon/actions/workflows/ci.yml/badge.svg)](https://github.com/hightemp/smpmon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<img src="https://asdertasd.site/counter/smpmon" alt="smpmon views">
 
 A terminal resource monitor in Go, inspired by [btop++](https://github.com/aristocratos/btop), built around **configurable dashboards** and **graphs**.
 
