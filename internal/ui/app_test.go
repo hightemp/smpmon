@@ -234,6 +234,8 @@ func TestTopBarDegrades(t *testing.T) {
 	}
 	m.setStatus("")
 	m.hostname = "box"
+	// How many tabs show depends on the machine (no GPU tab without a GPU).
+	m.Update(tea.WindowSizeMsg{Width: 200, Height: 30})
 	if bar := ansi.Strip(m.topBar()); !strings.Contains(bar, "help") || !strings.Contains(bar, "box") {
 		t.Fatalf("help should fit without status: %q", bar)
 	}
