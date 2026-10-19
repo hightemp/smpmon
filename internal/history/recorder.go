@@ -72,7 +72,13 @@ const topProcs = 20
 // recordedTables are kept with the processes.
 var recordedTables = []string{
 	collect.TableFilesystems, collect.TableInterfaces, collect.TableCPUInfo, collect.TableSystem, collect.TableGPUs,
+	collect.TableGPUProcs,
 }
+
+// staleTable is the age after which the GPU process table is no longer
+// recorded: its collector only runs while the table is on screen. Other
+// tables are either refreshed constantly or set once at startup.
+const staleTable = 30 * time.Second
 
 // Recorder writes a store's metrics to disk.
 type Recorder struct {
@@ -204,7 +210,7 @@ func (r *Recorder) tables(now time.Time) ([]byte, error) {
 		rec.Tables[collect.TableProcesses] = raw
 	}
 	for _, name := range recordedTables {
-		if v, _, ok := r.store.Table(name); ok {
+		if v, at, ok := r.store.Table(name); ok && (name != collect.TableGPUProcs || now.Sub(at) < staleTable) {
 			raw, err := json.Marshal(v)
 			if err != nil {
 				return nil, err

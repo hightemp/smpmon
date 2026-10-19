@@ -19,7 +19,7 @@ general:
   border: rounded
   mouse: true
   # Dashboards shown as tabs (keys 1-9), in order. Empty shows all.
-  dashboards: [btop, minimal, procs, net, server, hardware, containers]
+  dashboards: [btop, minimal, procs, net, server, hardware, gpu, containers]
   default_dashboard: btop
 
 # Per-collector settings: interval and enabled.
@@ -178,6 +178,50 @@ dashboards:
               title: GPU power
               options:
                 metrics: ["gpu.*.power"]
+
+  # nvtop style; hidden on machines without a supported GPU. {gpu} in a
+  # metric follows the card chosen with u (all cards until one is chosen).
+  gpu:
+    title: GPU
+    layout:
+      col:
+        - widget: gpu
+          weight: 3
+          options: {view: graphs}
+        - row:
+            - widget: graph
+              title: Temperature
+              options: {metrics: ["gpu.{gpu}.temp"], style: line, min: 20, max: 100}
+            - widget: graph
+              title: Power
+              options: {metrics: ["gpu.{gpu}.power", "gpu.{gpu}.power_limit"], style: line}
+            - widget: graph
+              title: Clocks
+              options: {metrics: ["gpu.{gpu}.clock", "gpu.{gpu}.mem_clock"], style: line}
+          weight: 2
+        - row:
+            - widget: graph
+              title: Encoder / decoder
+              options: {metrics: ["gpu.{gpu}.enc", "gpu.{gpu}.dec"], style: line, max: 100}
+            - widget: graph
+              title: PCIe
+              options: {metrics: ["gpu.{gpu}.pcie_rx", "gpu.{gpu}.pcie_tx"], style: line}
+            - widget: graph
+              title: Fan
+              options: {metrics: ["gpu.{gpu}.fan"], max: 100}
+          weight: 2
+        - widget: gpu_procs
+          weight: 4
+    variants:
+      # Small terminals: cards and processes only.
+      - when: {max_height: 34}
+        layout:
+          col:
+            - widget: gpu
+              weight: 2
+              options: {view: graphs}
+            - widget: gpu_procs
+              weight: 3
 
   containers:
     title: Containers

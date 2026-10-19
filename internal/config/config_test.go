@@ -19,7 +19,7 @@ func TestDefaultIsValid(t *testing.T) {
 	if cfg.General.Interval != time.Second || cfg.General.GraphMode != "braille" {
 		t.Fatalf("general %+v", cfg.General)
 	}
-	if got := cfg.Tabs(); len(got) != 7 || got[0] != "btop" {
+	if got := cfg.Tabs(); len(got) != 8 || got[0] != "btop" {
 		t.Fatalf("tabs %v", got)
 	}
 	if cfg.CollectorIntervals()["procs"] != 2*time.Second {

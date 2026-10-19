@@ -11,7 +11,8 @@ import (
 
 // Collectors returns fresh instances of all collectors for this OS.
 func Collectors() []collect.Collector {
-	return append(linux.Collectors(), gpu.New(), docker.New())
+	cs := append(linux.Collectors(), gpu.Collectors()...)
+	return append(cs, docker.New())
 }
 
 // ProcessController returns the process controller for this OS.

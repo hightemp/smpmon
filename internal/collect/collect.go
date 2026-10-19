@@ -7,6 +7,7 @@ package collect
 import (
 	"context"
 	"errors"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -79,6 +80,9 @@ func CollectorsFor(patterns []string) []string {
 			add("sensors")
 		case "gpu":
 			add("gpu")
+			if last := p[strings.LastIndexByte(p, '.')+1:]; last == "**" || matchGlob(last, "pcie_rx") {
+				add("gpu_pcie")
+			}
 		case "battery":
 			add("battery")
 		case "docker":
@@ -98,4 +102,10 @@ func CollectorsFor(patterns []string) []string {
 		}
 	}
 	return out
+}
+
+// matchGlob matches a selector segment glob against a name.
+func matchGlob(pattern, name string) bool {
+	ok, err := path.Match(pattern, name)
+	return ok && err == nil
 }

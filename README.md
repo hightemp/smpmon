@@ -12,11 +12,12 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 ## Features
 
 - CPU (total and per core, frequency, temperature, load), memory and swap (including the ZFS ARC), filesystems, disk I/O, network and processes
-- GPUs (NVIDIA through `nvidia-smi`, AMD and Intel through sysfs on Linux), temperature and fan sensors, batteries, and Docker containers
+- GPUs (NVIDIA through `nvidia-smi`, AMD and Intel through sysfs on Linux) with an nvtop-style GPU tab: usage and memory graphs per card, temperature, power, clocks, encoder/decoder, PCIe, throttling and the processes on each GPU
+- Temperature and fan sensors, batteries, and Docker containers
 - Linux, macOS and Windows
 - Dashboards described as a YAML layout tree of widgets, switchable with `1`–`9`, with size-dependent variants for narrow terminals
 - A layout editor inside the TUI (`e`): split, add, delete, move and resize widgets, drag borders with the mouse, edit widget options, undo, and save back to the config file
-- Built-in dashboards: `btop`, `minimal`, `procs`, `net`, `server`, `hardware`, `containers`. Widgets whose data isn't available on the machine, such as a battery on a desktop, are hidden automatically
+- Built-in dashboards: `btop`, `minimal`, `procs`, `net`, `server`, `hardware`, `gpu`, `containers`. Widgets whose data isn't available on the machine, such as a battery on a desktop, are hidden automatically, and so are tabs left with nothing to show
 - Graphs in braille, block or ASCII mode, with gradients, mirrored upload/download, and auto or log scale
 - Generic `graph`, `gauge`, `stat` and `table` widgets that show any metric by selector, such as `cpu.core.*.usage` or `net.*.*_bps`
 - A process table with configurable columns, sorting, filtering, a tree view, a details panel, signals and renice
@@ -61,6 +62,7 @@ Prebuilt binaries and deb/rpm packages are published on the [Releases](https://g
 | CPU, memory, disks, network, processes | `/proc`, `/sys` | sysctl, libproc | Win32, NT API |
 | Temperatures | hwmon | SMC | WMI (often needs administrator rights) |
 | GPU | NVIDIA, AMD, Intel | — | NVIDIA |
+| GPU processes | NVIDIA, AMD, Intel | — | NVIDIA (compute only) |
 | Battery | sysfs | `pmset` | `GetSystemPowerStatus` |
 | Docker | socket | Docker Desktop, Colima | `DOCKER_HOST=tcp://…` only |
 | Process signals | all | all | terminate only |
@@ -97,6 +99,7 @@ These are the default bindings; `?` shows the current ones. A `vim` preset and p
 | `T` | choose a theme |
 | `e` | edit the dashboard layout |
 | `H` | choose the host to show |
+| `u` | GPU widgets: show the next GPU, then all |
 | `[` / `]` | go back / forward in recorded history |
 | `w` | change the history window (10m, 1h, 6h, 24h, 7d) |
 | `p` | pause the display |
@@ -116,7 +119,24 @@ In the process widget:
 | `i` | renice |
 | `c` | show CPU per core or as a share of the whole machine |
 
+The GPU process table (`gpu_procs`) has the same keys.
+
 In the network widget, `b` and `n` switch the interface. In the Docker widget, `←` `→` change the sort order and `a` shows stopped containers. Mouse: click a widget or tab to select it, click a column header to sort, use the wheel to scroll.
+
+## GPU
+
+![smpmon showing the GPU tab](docs/gpu.svg)
+
+The GPU tab works like [nvtop](https://github.com/Syllo/nvtop). Each card gets a graph of GPU usage and memory use, with its readings above: temperature, power and power limit, clocks, fan, encoder and decoder load, PCIe link and P-state. When the card is held back by power or heat, the reason shows up in yellow, for example `⚠ power cap`. Below are graphs of temperature, power, clocks, encoder/decoder, PCIe throughput and fan, and the processes using the GPUs, with their GPU load, video memory, encoder and decoder load. The process table works like the main one: sort, filter, kill and renice.
+
+With several GPUs, all cards are shown one below the other. `u` picks one card for every GPU widget and graph on the screen, and pressing it after the last card goes back to all of them. In your own dashboards, `{gpu}` in a graph metric follows that choice (`gpu.{gpu}.temp`), and `index:` pins a `gpu` widget to one card.
+
+Where the data comes from:
+
+- NVIDIA: `nvidia-smi`, which comes with the driver. Card metrics are cheap. Per-process usage (`nvidia-smi pmon`) and PCIe throughput (`nvidia-smi dmon`) are more expensive: together they cost about 4% of one CPU core, so they run only while the GPU tab is open. nvtop reads the same data through the NVML library, which smpmon can't load without giving up its static binary. On Windows only compute processes are listed.
+- AMD and Intel on Linux: sysfs for the cards, and the kernel's per-client statistics in `/proc/<pid>/fdinfo` (amdgpu, i915, xe) for processes. Without root, only your own processes are visible. Encoder load and PCIe throughput are not available.
+
+The tab is hidden on machines without a supported GPU.
 
 ## Remote monitoring
 
@@ -194,6 +214,12 @@ alerts:
     notify: [tui, exec]
     exec: 'logger "$SMPMON_ALERT_MESSAGE"'
     hosts: [web1, db]                     # default: every host
+  - name: gpu-hot
+    expr: "gpu.*.temp > 85"
+    for: 30s
+  - name: gpu-throttled
+    expr: "gpu.*.throttled == 1"          # power cap or thermal slowdown
+    for: 2m
 ```
 
 Every series a selector matches is a separate alert, per host. A disk rule fires for the disk that fills up, and it resolves when that disk drops below the threshold or disappears.
@@ -342,12 +368,13 @@ A theme only needs the colors it changes; the rest come from the theme named in 
 | `text` | `text` (with `{hostname}` `{os}` `{kernel}` `{uptime}` `{time}` `{date}`), `align` |
 | `hosts` | — (overview of all hosts) |
 | `alerts` | — (firing alerts and recent events) |
-| `gpu` | `index`, `mode` |
+| `gpu` | `index`, `mode`, `view` (`meters` or `graphs`) |
+| `gpu_procs` | same as `proc` |
 | `sensors` | `filter`, `fans` (bool) |
 | `battery` | — |
 | `docker` | `all` (include stopped), `sort` (`cpu`, `mem`, `net` or `name`) |
 
-Process columns: `pid`, `ppid`, `name`, `cmd`, `user`, `state`, `threads`, `nice`, `cpu`, `mem`, `rss`, `vms`, `read`, `write`, `time`, `start`.
+Process columns: `pid`, `ppid`, `name`, `cmd`, `user`, `state`, `threads`, `nice`, `cpu`, `mem`, `rss`, `vms`, `read`, `write`, `time`, `start`, and for GPU processes `gpu`, `gpu_type`, `gpu_util`, `vram`, `gpu_enc`, `gpu_dec`.
 
 ### Metrics
 
@@ -366,7 +393,8 @@ Metric keys are dot-separated. Selectors support `*` (one segment), `**` (any nu
 | `net.total.*` | sums over physical NICs |
 | `proc.{count,threads,running}`, `proc.<pid>.{cpu,mem}` | count, % |
 | `cpu.temp`, `sensors.<chip>.<label>.temp`, `sensors.<chip>.<label>.fan` | °C, RPM |
-| `gpu.<n>.{util,mem_util,mem_used_percent,fan}`, `gpu.<n>.{mem_used,mem_total}`, `gpu.<n>.temp`, `gpu.<n>.{power,power_limit}`, `gpu.<n>.{clock,mem_clock}` | %, bytes, °C, W, Hz |
+| `gpu.<n>.{util,mem_util,mem_used_percent,fan,enc,dec}`, `gpu.<n>.{mem_used,mem_total}`, `gpu.<n>.temp`, `gpu.<n>.{power,power_limit}`, `gpu.<n>.{clock,mem_clock}` | %, bytes, °C, W, Hz |
+| `gpu.<n>.{pcie_rx,pcie_tx}`, `gpu.<n>.pstate`, `gpu.<n>.throttled` (1 while power or heat hold the clocks back) | bytes/s, —, — |
 | `battery.{percent,power,time_left}` | %, W, s |
 | `docker.<name>.{cpu,mem_percent}`, `docker.<name>.{mem_used,mem_limit}`, `docker.<name>.{net_rx_bps,net_tx_bps,blk_read_bps,blk_write_bps}` | %, bytes, bytes/s |
 

@@ -156,7 +156,8 @@ func TestMouse(t *testing.T) {
 	src := liveSource(t)
 	m := newTestModel(t, src, 120, 40)
 	// Clicking the second tab switches dashboards.
-	x := width(m.tabLabels()[0]) + 1
+	labels, _ := m.tabLabels()
+	x := width(labels[0]) + 1
 	m.Update(tea.MouseClickMsg{X: x, Y: 0, Button: tea.MouseLeft})
 	if m.active != 1 {
 		t.Fatalf("active %d", m.active)

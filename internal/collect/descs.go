@@ -31,6 +31,10 @@ import "github.com/hightemp/smpmon/internal/metrics"
 //	gpu.<n>.temp                                 °C
 //	gpu.<n>.{power,power_limit}                  W
 //	gpu.<n>.{clock,mem_clock}                    Hz
+//	gpu.<n>.{enc,dec}                            percent
+//	gpu.<n>.{pcie_rx,pcie_tx}                    bytes/s
+//	gpu.<n>.pstate                               P-state number
+//	gpu.<n>.throttled                            1 while clocks are reduced by power or heat
 //	battery.{percent}, battery.power, battery.time_left  %, W, s
 //	docker.<name>.{cpu,mem_percent}              percent
 //	docker.<name>.{mem_used,mem_limit}           bytes
@@ -65,6 +69,11 @@ func init() {
 		metrics.Desc{Pattern: "gpu.*.mem_total", Unit: metrics.UnitBytes, Help: "GPU memory"},
 		metrics.Desc{Pattern: "gpu.*.power*", Unit: metrics.UnitWatts, Help: "GPU power"},
 		metrics.Desc{Pattern: "gpu.*.*clock", Unit: metrics.UnitHertz, Help: "GPU clock"},
+		metrics.Desc{Pattern: "gpu.*.pcie_*", Unit: metrics.UnitBytesPerSec, Help: "GPU PCIe throughput"},
+		metrics.Desc{Pattern: "gpu.*.pstate", Unit: metrics.UnitNone, Help: "GPU performance state"},
+		metrics.Desc{Pattern: "gpu.*.throttled", Unit: metrics.UnitNone, Max: 1, Help: "GPU clocks reduced by power or thermal limits"},
+		metrics.Desc{Pattern: "gpu.*.enc", Unit: metrics.UnitPercent, Max: 100, Help: "GPU video encoder"},
+		metrics.Desc{Pattern: "gpu.*.dec", Unit: metrics.UnitPercent, Max: 100, Help: "GPU video decoder"},
 		metrics.Desc{Pattern: "gpu.*.*", Unit: metrics.UnitPercent, Max: 100, Help: "GPU utilization"},
 		metrics.Desc{Pattern: "battery.percent", Unit: metrics.UnitPercent, Max: 100, Help: "Battery charge"},
 		metrics.Desc{Pattern: "battery.power", Unit: metrics.UnitWatts, Help: "Battery power"},

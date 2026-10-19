@@ -36,6 +36,8 @@ type Context struct {
 	History bool
 	// Alerts is the alert engine, nil without rules.
 	Alerts *alert.Engine
+	// GPU is the card chosen with gpu_next, or -1 to show all.
+	GPU int
 }
 
 // series reads up to n values of k for a graph n slots wide.
@@ -115,22 +117,23 @@ type widgetMeta struct {
 }
 
 var metas = map[string]widgetMeta{
-	"cpu":     {"CPU graph and per-core usage", reflect.TypeFor[cpuOptions](), ""},
-	"mem":     {"memory and swap", reflect.TypeFor[memOptions](), ""},
-	"disks":   {"filesystems and disk I/O", reflect.TypeFor[disksOptions](), ""},
-	"net":     {"network throughput", reflect.TypeFor[netOptions](), ""},
-	"proc":    {"process table", reflect.TypeFor[procOptions](), ""},
-	"gpu":     {"GPU usage", reflect.TypeFor[gpuOptions](), ""},
-	"sensors": {"temperatures and fans", reflect.TypeFor[sensorsOptions](), ""},
-	"battery": {"battery charge", reflect.TypeFor[struct{}](), ""},
-	"docker":  {"containers", reflect.TypeFor[dockerOptions](), ""},
-	"graph":   {"graph of any metrics", reflect.TypeFor[graphOptions](), "metrics: [cpu.total.usage]"},
-	"gauge":   {"bar for one metric", reflect.TypeFor[gaugeOptions](), "metric: cpu.total.usage"},
-	"stat":    {"big number with sparkline", reflect.TypeFor[statOptions](), "metric: mem.used_percent"},
-	"table":   {"table of metrics", reflect.TypeFor[tableOptions](), "metrics: ['mem.*']"},
-	"text":    {"text with host info", reflect.TypeFor[textOptions](), ""},
-	"hosts":   {"overview of all hosts", reflect.TypeFor[struct{}](), ""},
-	"alerts":  {"firing alerts and recent events", reflect.TypeFor[struct{}](), ""},
+	"cpu":       {"CPU graph and per-core usage", reflect.TypeFor[cpuOptions](), ""},
+	"mem":       {"memory and swap", reflect.TypeFor[memOptions](), ""},
+	"disks":     {"filesystems and disk I/O", reflect.TypeFor[disksOptions](), ""},
+	"net":       {"network throughput", reflect.TypeFor[netOptions](), ""},
+	"proc":      {"process table", reflect.TypeFor[procOptions](), ""},
+	"gpu":       {"GPU usage", reflect.TypeFor[gpuOptions](), ""},
+	"gpu_procs": {"processes using GPUs", reflect.TypeFor[procOptions](), ""},
+	"sensors":   {"temperatures and fans", reflect.TypeFor[sensorsOptions](), ""},
+	"battery":   {"battery charge", reflect.TypeFor[struct{}](), ""},
+	"docker":    {"containers", reflect.TypeFor[dockerOptions](), ""},
+	"graph":     {"graph of any metrics", reflect.TypeFor[graphOptions](), "metrics: [cpu.total.usage]"},
+	"gauge":     {"bar for one metric", reflect.TypeFor[gaugeOptions](), "metric: cpu.total.usage"},
+	"stat":      {"big number with sparkline", reflect.TypeFor[statOptions](), "metric: mem.used_percent"},
+	"table":     {"table of metrics", reflect.TypeFor[tableOptions](), "metrics: ['mem.*']"},
+	"text":      {"text with host info", reflect.TypeFor[textOptions](), ""},
+	"hosts":     {"overview of all hosts", reflect.TypeFor[struct{}](), ""},
+	"alerts":    {"firing alerts and recent events", reflect.TypeFor[struct{}](), ""},
 }
 
 // KnownWidget reports whether a widget type exists.

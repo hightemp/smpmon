@@ -86,6 +86,7 @@ type Model struct {
 	updates       chan struct{} // any store was written
 	configCh      chan struct{}
 	unsupSig      string // unsupported collectors at the last layout
+	gpuPick       int    // GPU chosen with gpu_next plus one, 0 = all
 	cancelWatch   context.CancelFunc
 	hostname      string
 }
@@ -210,6 +211,7 @@ func (m *Model) applyConfig(cfg *config.Config) error {
 		Alerts:    m.opts.Alerts,
 		NumCPU:    runtime.NumCPU(),
 		Keys:      keys,
+		GPU:       m.gpuPick - 1,
 	}
 	m.active = max(slices.IndexFunc(dbs, func(d *dashboard) bool { return d.name == prev }), 0)
 	m.relayout()
@@ -263,6 +265,13 @@ func (m *Model) unsupported() map[string]bool {
 // if nothing would be left.
 func pruneUnsupported(n *config.Node, widgets map[*config.Node]Widget, unsup map[string]bool) *config.Node {
 	if n.Dir == config.DirNone {
+		if r, ok := widgets[n].(requirer); ok {
+			for _, c := range r.Requires() {
+				if unsup[c] {
+					return nil
+				}
+			}
+		}
 		cs := widgets[n].Collectors()
 		if len(cs) == 0 {
 			return n
@@ -285,6 +294,26 @@ func pruneUnsupported(n *config.Node, widgets map[*config.Node]Widget, unsup map
 		return nil
 	}
 	return &cp
+}
+
+// requirer is implemented by widgets that are useless without a specific
+// collector even though they use others too.
+type requirer interface {
+	Requires() []string
+}
+
+// tabs returns the indexes of the dashboards shown as tabs: those with
+// anything left to show on this host (no GPU tab without a GPU). The
+// active dashboard always stays.
+func (m *Model) tabs() []int {
+	unsup := m.unsupported()
+	out := make([]int, 0, len(m.dashboards))
+	for i, d := range m.dashboards {
+		if i == m.active || len(unsup) == 0 || pruneUnsupported(d.cfg.Layout, d.widgets, unsup) != nil {
+			out = append(out, i)
+		}
+	}
+	return out
 }
 
 func (m *Model) defaultFocus() int {
@@ -585,6 +614,8 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 		}
 	case "history_window":
 		return m.histCycleWindow()
+	case "gpu_next":
+		m.nextGPU()
 	case "host":
 		if len(m.hosts) > 1 {
 			m.dialog = m.hostDialog()
@@ -594,7 +625,9 @@ func (m *Model) handleKey(k tea.KeyPressMsg) tea.Cmd {
 	default:
 		if n, ok := strings.CutPrefix(string(a), "dashboard_"); ok {
 			i, _ := strconv.Atoi(n)
-			m.switchDashboard(i - 1)
+			if tabs := m.tabs(); i >= 1 && i <= len(tabs) {
+				m.switchDashboard(tabs[i-1])
+			}
 		}
 	}
 	return nil
@@ -818,35 +851,37 @@ func (m *Model) drawWidget(screen [][]segment, w Widget, n *config.Node, r layou
 	}
 }
 
-// tabLabels returns the tab bar labels. When the full labels would leave
-// less than minRight cells for the right side of the bar, inactive tabs
-// show only their number.
-func (m *Model) tabLabels() []string {
+// tabLabels returns the tab bar labels and the dashboards they stand for.
+// When the full labels would leave less than minRight cells for the right
+// side of the bar, inactive tabs show only their number.
+func (m *Model) tabLabels() ([]string, []int) {
 	const minRight = 12
-	labels := make([]string, len(m.dashboards))
+	tabs := m.tabs()
+	labels := make([]string, len(tabs))
 	total := 0
-	for i, d := range m.dashboards {
-		labels[i] = " " + strconv.Itoa(i+1) + " " + d.title + " "
+	for i, d := range tabs {
+		labels[i] = " " + strconv.Itoa(i+1) + " " + m.dashboards[d].title + " "
 		total += width(labels[i])
 	}
 	if total+minRight <= m.width {
-		return labels
+		return labels, tabs
 	}
-	for i := range labels {
-		if i != m.active {
+	for i, d := range tabs {
+		if d != m.active {
 			labels[i] = " " + strconv.Itoa(i+1) + " "
 		}
 	}
-	return labels
+	return labels, tabs
 }
 
 // tabAt returns the dashboard index of the tab at column x, or -1.
 func (m *Model) tabAt(x int) int {
 	pos := 0
-	for i, l := range m.tabLabels() {
+	labels, tabs := m.tabLabels()
+	for i, l := range labels {
 		w := width(l)
 		if x >= pos && x < pos+w {
-			return i
+			return tabs[i]
 		}
 		pos += w
 	}
@@ -856,8 +891,9 @@ func (m *Model) tabAt(x int) int {
 func (m *Model) topBar() string {
 	t := m.ctx.Theme
 	var left strings.Builder
-	for i, l := range m.tabLabels() {
-		if i == m.active {
+	labels, tabs := m.tabLabels()
+	for i, l := range labels {
+		if tabs[i] == m.active {
 			left.WriteString(bg(t.Selected, fg(t.SelectedFg, bold(l))))
 		} else {
 			left.WriteString(fg(t.Dim, l))

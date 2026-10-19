@@ -82,7 +82,8 @@ var unitSuffix = map[metrics.Unit]string{
 }
 
 // abbreviations in key names spelled out for metric names.
-var abbreviations = strings.NewReplacer("_pps", "_packets", "_errs", "_errors", "_iops", "_operations")
+var abbreviations = strings.NewReplacer("_pps", "_packets", "_errs", "_errors", "_iops", "_operations",
+	"gpu_enc", "gpu_encoder", "gpu_dec", "gpu_decoder")
 
 // sample is one exported value.
 type sample struct {

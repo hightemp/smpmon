@@ -38,6 +38,8 @@ type procColumn struct {
 	right  bool // right-aligned
 	value  func(p *collect.Process, w *procWidget, ctx *Context) string
 	cmp    func(a, b *collect.Process) int
+	// wcmp replaces cmp for columns whose data lives in the widget.
+	wcmp func(w *procWidget, a, b *collect.Process) int
 }
 
 var procColumns = map[string]procColumn{
@@ -134,33 +136,46 @@ type procWidget struct {
 	colX      []int
 
 	cpuBuf, memBuf []float64
+
+	// gpu lists only processes using a GPU (the gpu_procs widget).
+	gpu     bool
+	gpuInfo map[int32]*gpuProcInfo
 }
 
 func init() {
-	register("proc", func(n *config.Node) (Widget, error) {
-		w := &procWidget{collapsed: map[int32]bool{}}
-		if err := n.DecodeOptions(&w.opts); err != nil {
-			return nil, err
+	register("proc", func(n *config.Node) (Widget, error) { return newProcWidget(n, false) })
+	register("gpu_procs", func(n *config.Node) (Widget, error) { return newProcWidget(n, true) })
+}
+
+func newProcWidget(n *config.Node, gpu bool) (Widget, error) {
+	w := &procWidget{collapsed: map[int32]bool{}, gpu: gpu}
+	if err := n.DecodeOptions(&w.opts); err != nil {
+		return nil, err
+	}
+	names := w.opts.Columns
+	if len(names) == 0 {
+		names = defaultProcColumns
+		if gpu {
+			names = defaultGPUProcColumns
 		}
-		names := w.opts.Columns
-		if len(names) == 0 {
-			names = defaultProcColumns
+	}
+	for _, c := range names {
+		col, ok := procColumns[c]
+		if !ok {
+			return nil, fmt.Errorf("options.columns: unknown column %q (valid: %s)", c, strings.Join(procColumnNames(), ", "))
 		}
-		for _, c := range names {
-			col, ok := procColumns[c]
-			if !ok {
-				return nil, fmt.Errorf("options.columns: unknown column %q (valid: %s)", c, strings.Join(procColumnNames(), ", "))
-			}
-			w.cols = append(w.cols, col)
-		}
-		w.sortBy = cmp.Or(w.opts.Sort.By, "cpu")
-		if _, ok := procColumns[w.sortBy]; !ok {
-			return nil, fmt.Errorf("options.sort.by: unknown column %q", w.sortBy)
-		}
-		w.desc = w.opts.Sort.Desc == nil || *w.opts.Sort.Desc
-		w.tree, w.perCore, w.filter = w.opts.Tree, w.opts.PerCore, w.opts.Filter
-		return w, nil
-	})
+		w.cols = append(w.cols, col)
+	}
+	w.sortBy = cmp.Or(w.opts.Sort.By, "cpu")
+	if gpu && w.opts.Sort.By == "" {
+		w.sortBy = "vram"
+	}
+	if _, ok := procColumns[w.sortBy]; !ok {
+		return nil, fmt.Errorf("options.sort.by: unknown column %q", w.sortBy)
+	}
+	w.desc = w.opts.Sort.Desc == nil || *w.opts.Sort.Desc
+	w.tree, w.perCore, w.filter = w.opts.Tree, w.opts.PerCore, w.opts.Filter
+	return w, nil
 }
 
 func procColumnNames() []string {
@@ -172,9 +187,29 @@ func procColumnNames() []string {
 	return names
 }
 
-func (w *procWidget) Kind() string         { return "proc" }
-func (w *procWidget) Collectors() []string { return []string{"procs"} }
-func (w *procWidget) Capturing() bool      { return w.filtering }
+func (w *procWidget) Kind() string {
+	if w.gpu {
+		return "gpu_procs"
+	}
+	return "proc"
+}
+
+func (w *procWidget) Collectors() []string {
+	if w.gpu {
+		// gpu: older agents send the GPU process table with the card data.
+		return []string{"gpu_procs", "procs", "gpu"}
+	}
+	return []string{"procs"}
+}
+
+// Requires implements requirer: without GPU processes the widget is hidden.
+func (w *procWidget) Requires() []string {
+	if w.gpu {
+		return []string{"gpu_procs"}
+	}
+	return nil
+}
+func (w *procWidget) Capturing() bool { return w.filtering }
 
 func (w *procWidget) cpu(ctx *Context, p *collect.Process) float64 {
 	if w.perCore || ctx.NumCPU <= 0 {
@@ -201,6 +236,9 @@ func (w *procWidget) Title(ctx *Context) (string, string) {
 		dir = "↑"
 	}
 	info += fg(t.Dim, "sort ") + fg(t.Fg, procColumns[w.sortBy].header+dir)
+	if w.gpu {
+		return "gpu procs", fg(t.Dim, strconv.Itoa(countGPUProcs(ctx))+" ") + info
+	}
 	return "proc", info
 }
 
@@ -218,6 +256,9 @@ func (w *procWidget) Footer(ctx *Context) string {
 // visible builds the displayed rows: filtered, sorted or as a tree.
 func (w *procWidget) visible(ctx *Context) []procRow {
 	procs, _ := metrics.TableAs[[]collect.Process](ctx.Store, collect.TableProcesses)
+	if w.gpu {
+		procs = w.gpuProcesses(ctx, procs)
+	}
 	list := make([]*collect.Process, 0, len(procs))
 	f := strings.ToLower(w.filter)
 	for i := range procs {
@@ -229,7 +270,12 @@ func (w *procWidget) visible(ctx *Context) []procRow {
 	}
 	col := procColumns[w.sortBy]
 	less := func(a, b *collect.Process) int {
-		c := col.cmp(a, b)
+		var c int
+		if col.wcmp != nil {
+			c = col.wcmp(w, a, b)
+		} else {
+			c = col.cmp(a, b)
+		}
 		if c == 0 {
 			c = cmp.Compare(a.PID, b.PID)
 			if w.desc {
@@ -396,6 +442,8 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 				s = fg(t.Proc.At(w.cpu(ctx, p)/100), s)
 			case c.key == "mem" || c.key == "rss":
 				s = fg(t.Proc.At(p.Mem/100), s)
+			case c.key == "gpu_util":
+				s = fg(t.Proc.At(w.gpuOf(p).util/100), s)
 			case c.key == "cmd" || c.key == "pid":
 				s = fg(t.Dim, s)
 			default:

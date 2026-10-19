@@ -39,6 +39,10 @@ func TestPrometheus(t *testing.T) {
 		"sensors.coretemp.Package id 0.temp": 55,
 		"proc.123.cpu":                       9,
 		"gpu.0.power":                        17,
+		"gpu.0.enc":                          4,
+		"gpu.0.pcie_rx":                      2048,
+		"gpu.0.throttled":                    1,
+		"gpu.0.pstate":                       2,
 		"weird.thing":                        1,
 	})
 	var buf bytes.Buffer
@@ -60,6 +64,10 @@ func TestPrometheus(t *testing.T) {
 		`smpmon_disk_read_operations_per_second{device="sda"} 3`,
 		`smpmon_sensor_temperature_celsius{chip="coretemp",sensor="Package id 0"} 55`,
 		`smpmon_gpu_power_watts{gpu="0"} 17`,
+		`smpmon_gpu_encoder_percent{gpu="0"} 4`,
+		`smpmon_gpu_pcie_rx_bytes_per_second{gpu="0"} 2048`,
+		`smpmon_gpu_throttled{gpu="0"} 1`,
+		`smpmon_gpu_pstate{gpu="0"} 2`,
 		"smpmon_weird_thing 1",
 		"# TYPE smpmon_cpu_usage_percent gauge",
 		"# HELP smpmon_cpu_usage_percent CPU usage",

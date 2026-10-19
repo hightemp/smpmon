@@ -102,5 +102,6 @@ release: ## Commit VERSION, tag v$(VERSION) and push (triggers the GitHub releas
 	echo "pushed $(TAG)"
 
 .PHONY: screenshot
-screenshot: build ## Regenerate docs/screenshot.svg from a live frame (takes ~1 min)
+screenshot: build ## Regenerate docs/screenshot.svg and docs/gpu.svg from live frames (takes ~2 min)
 	./bin/$(BINARY) frame --width 160 --height 48 --interval 500ms --wait 60s | scripts/ansi2svg.py > docs/screenshot.svg
+	./bin/$(BINARY) frame --width 160 --height 48 --interval 500ms --wait 60s --dashboard gpu | scripts/ansi2svg.py > docs/gpu.svg

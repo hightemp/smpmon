@@ -144,3 +144,6 @@ func block(lines []string, w, h int) []string {
 
 // ansiStrip removes escape sequences, e.g. to restyle a whole line.
 func ansiStrip(s string) string { return ansi.Strip(s) }
+
+// cutLeft drops the first n cells of s, keeping its colors.
+func cutLeft(s string, n int) string { return ansi.TruncateLeft(s, n, "") }

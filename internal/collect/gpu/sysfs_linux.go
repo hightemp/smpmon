@@ -30,6 +30,7 @@ type card struct {
 	drm    string // /sys/class/drm/cardN
 	vendor string
 	name   string
+	pci    string // PCI address such as 0000:03:00.0
 	hwmon  string // hwmon dir with temp/power/fan, may be empty
 }
 
@@ -83,6 +84,9 @@ func scanSysfs(root string) *sysfs {
 			continue
 		}
 		c := card{dir: dev, drm: drm, vendor: vendor}
+		if target, err := filepath.EvalSymlinks(dev); err == nil {
+			c.pci = filepath.Base(target)
+		}
 		c.name = readStr(filepath.Join(dev, "product_name"))
 		if c.name == "" {
 			c.name = map[string]string{vendorAMD: "AMD GPU", vendorIntel: "Intel GPU"}[vendor]
@@ -102,10 +106,8 @@ func scanSysfs(root string) *sysfs {
 func (s *sysfs) read(first int) ([]collect.GPU, error) {
 	out := make([]collect.GPU, 0, len(s.cards))
 	for i, c := range s.cards {
-		g := collect.GPU{
-			Index: first + i, Name: c.name, Util: -1, MemUtil: -1, Temp: -1,
-			Power: -1, PowerLimit: -1, Clock: -1, MemClock: -1, Fan: -1,
-		}
+		g := collect.UnknownGPU()
+		g.Index, g.Name = first+i, c.name
 		switch c.vendor {
 		case vendorAMD:
 			g.Vendor = "amd"

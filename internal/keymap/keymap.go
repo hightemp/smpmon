@@ -48,6 +48,7 @@ var Actions = []ActionInfo{
 	{"theme", Global, "choose theme"},
 	{"edit", Global, "edit the dashboard layout"},
 	{"host", Global, "choose the host to show"},
+	{"gpu_next", Global, "GPU widgets: show the next GPU, then all"},
 	{"history_back", Global, "history: go back in time"},
 	{"history_forward", Global, "history: go forward (to live)"},
 	{"history_window", Global, "history: change the window"},
@@ -125,6 +126,7 @@ func defaults() map[Action][]string {
 		"docker_all":   {"a"},
 		"edit":         {"e"},
 		"host":         {"H"},
+		"gpu_next":     {"u"},
 		"history_back": {"["}, "history_forward": {"]"}, "history_window": {"w"},
 
 		"edit_parent": {"["}, "edit_child": {"]"},

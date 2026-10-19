@@ -1,6 +1,7 @@
 package collect
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -181,13 +182,55 @@ type GPU struct {
 	Clock      float64 // Hz
 	MemClock   float64 // Hz
 	Fan        float64 // percent
+	Enc        float64 // video encoder, percent
+	Dec        float64 // video decoder, percent
+	PCIeRX     float64 // bytes/s
+	PCIeTX     float64 // bytes/s
+	PCIeGen    int     // current link generation, 0 if unknown
+	PCIeWidth  int     // current link width, 0 if unknown
+	PState     int     // performance state (0 = fastest)
+	Throttle   []string
 }
 
-// GPUProcess is a process using a GPU.
+// UnknownGPU returns a GPU with every optional value unknown.
+func UnknownGPU() GPU {
+	return GPU{Util: -1, MemUtil: -1, Temp: -1, Power: -1, PowerLimit: -1, Clock: -1, MemClock: -1,
+		Fan: -1, Enc: -1, Dec: -1, PCIeRX: -1, PCIeTX: -1, PState: -1}
+}
+
+// UnmarshalJSON treats fields missing from older agents as unknown rather
+// than zero.
+func (g *GPU) UnmarshalJSON(b []byte) error {
+	type plain GPU
+	v := plain(UnknownGPU())
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*g = GPU(v)
+	return nil
+}
+
+// GPUProcess is a process using a GPU. Unknown values are negative.
 type GPUProcess struct {
 	PID     int32
 	GPU     int
+	Type    string // C (compute), G (graphics) or C+G; empty if unknown
+	Name    string // short name as reported by the driver, may be truncated
 	MemUsed uint64
+	Util    float64 // percent of the GPU
+	Enc     float64 // percent
+	Dec     float64 // percent
+}
+
+// UnmarshalJSON treats fields missing from older agents as unknown.
+func (p *GPUProcess) UnmarshalJSON(b []byte) error {
+	type plain GPUProcess
+	v := plain{Util: -1, Enc: -1, Dec: -1}
+	if err := json.Unmarshal(b, &v); err != nil {
+		return err
+	}
+	*p = GPUProcess(v)
+	return nil
 }
 
 // Battery is a battery snapshot.

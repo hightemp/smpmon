@@ -3,6 +3,8 @@ package ui
 import (
 	"errors"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,6 +70,26 @@ type graphWidget struct {
 	sels []metrics.Selector
 	bufs [][]float64
 	tmp  []float64
+
+	// With {gpu} in the metrics the selectors follow the GPU chosen with
+	// gpu_next; selGPU is the choice sels were built for.
+	perGPU bool
+	selGPU int
+}
+
+// gpuPlaceholder in a metric stands for the chosen GPU, or all of them.
+const gpuPlaceholder = "{gpu}"
+
+func withGPU(patterns []string, gpu int) []string {
+	v := "*"
+	if gpu >= 0 {
+		v = strconv.Itoa(gpu)
+	}
+	out := make([]string, len(patterns))
+	for i, p := range patterns {
+		out[i] = strings.ReplaceAll(p, gpuPlaceholder, v)
+	}
+	return out
 }
 
 func init() {
@@ -76,23 +98,30 @@ func init() {
 		if err := n.DecodeOptions(&w.opts); err != nil {
 			return nil, err
 		}
+		w.perGPU = slices.ContainsFunc(w.opts.Metrics, func(m string) bool { return strings.Contains(m, gpuPlaceholder) })
+		w.selGPU = -1
 		var err error
-		w.sels, err = parseSelectors(w.opts.Metrics)
+		w.sels, err = parseSelectors(withGPU(w.opts.Metrics, -1))
 		return w, err
 	})
 }
 
 func (g *graphWidget) Kind() string         { return "graph" }
-func (g *graphWidget) Collectors() []string { return collectorsFor(g.opts.Metrics) }
+func (g *graphWidget) Collectors() []string { return collectorsFor(withGPU(g.opts.Metrics, -1)) }
 func (g *graphWidget) Title(ctx *Context) (string, string) {
-	return "graph", fg(ctx.Theme.Dim, strings.Join(g.opts.Metrics, " "))
+	return "graph", fg(ctx.Theme.Dim, strings.Join(withGPU(g.opts.Metrics, ctx.GPU), " "))
 }
 
 func (g *graphWidget) Render(ctx *Context, w, h int) []string {
 	t := ctx.Theme
+	if g.perGPU && ctx.GPU != g.selGPU {
+		if sels, err := parseSelectors(withGPU(g.opts.Metrics, ctx.GPU)); err == nil {
+			g.sels, g.selGPU = sels, ctx.GPU
+		}
+	}
 	keys := expand(ctx, g.sels, g.opts.Limit)
 	if len(keys) == 0 {
-		return block([]string{fg(t.Dim, "no data for "+strings.Join(g.opts.Metrics, ", "))}, w, h)
+		return block([]string{fg(t.Dim, "no data for "+strings.Join(withGPU(g.opts.Metrics, ctx.GPU), ", "))}, w, h)
 	}
 	legend := (g.opts.Legend == nil && len(keys) > 1) || (g.opts.Legend != nil && *g.opts.Legend)
 	legendRows := 0
