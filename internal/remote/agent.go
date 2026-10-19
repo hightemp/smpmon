@@ -81,12 +81,24 @@ func Serve(ctx context.Context, rw io.ReadWriteCloser, opts AgentOptions) error 
 		}
 	}
 
+	// The first send error ends the session; collectors send concurrently
+	// with the receive loop below, which reports it.
+	var sendMu sync.Mutex
 	var sendErr error
-	var sendOnce sync.Once
 	send := func(m *Message) {
 		if err := conn.Send(m); err != nil {
-			sendOnce.Do(func() { sendErr = err; cancel() })
+			sendMu.Lock()
+			if sendErr == nil {
+				sendErr = err
+				cancel()
+			}
+			sendMu.Unlock()
 		}
+	}
+	firstSendErr := func() error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
+		return sendErr
 	}
 
 	local := source.NewLocal(source.LocalOptions{
@@ -108,8 +120,8 @@ func Serve(ctx context.Context, rw io.ReadWriteCloser, opts AgentOptions) error 
 	for {
 		m, err := conn.Recv()
 		if err != nil {
-			if sendErr != nil {
-				return sendErr
+			if err := firstSendErr(); err != nil {
+				return err
 			}
 			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return nil
