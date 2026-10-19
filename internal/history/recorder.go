@@ -47,7 +47,7 @@ var metricTiers = []Tier{Raw, Ten, Minute}
 // DefaultMetrics are recorded unless the config says otherwise. Per-process
 // series are excluded; top processes are kept as tables instead.
 var DefaultMetrics = []string{
-	"cpu.total.*", "cpu.core.*.usage", "cpu.freq", "cpu.temp", "load.*", "mem.*", "swap.*",
+	"cpu.total.*", "cpu.core.*.usage", "cpu.core.*.temp", "cpu.freq", "cpu.temp", "load.*", "mem.*", "swap.*",
 	"disk.fs.*.used_percent", "disk.io.*.*", "net.*.*_bps", "net.total.*", "sensors.**",
 	"gpu.*.*", "battery.*", "docker.*.cpu", "docker.*.mem_used", "proc.count", "proc.threads",
 }

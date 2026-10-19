@@ -78,7 +78,10 @@ type Graph struct {
 	// Invert grows bars downward from the top edge, for mirrored graphs
 	// such as network upload under download.
 	Invert bool
-	Series []Series
+	// ColorByValue colors each column by its value instead of each row by
+	// its height; one-row graphs need it to show anything but one color.
+	ColorByValue bool
+	Series       []Series
 }
 
 // Slots returns how many values fit horizontally.
@@ -169,10 +172,12 @@ func (g *Graph) drawBraille(c *Canvas, x0, y0 int, norm func(float64) float64) {
 	w, h := g.Width, g.Height
 	dotsH := h * 4
 	masks := make([]uint8, w*h)
-	owner := make([]int8, w*h) // series index that colors the cell
+	owner := make([]int8, w*h)    // series index that colors the cell
+	level := make([]float64, w*h) // highest value drawn in the cell, for ColorByValue
 	for i := range owner {
 		owner[i] = -1
 	}
+	cur := 0.0 // normalized value being drawn
 	setDot := func(dx, dy, si int) {
 		if g.Invert {
 			dy = dotsH - 1 - dy
@@ -183,6 +188,7 @@ func (g *Graph) drawBraille(c *Canvas, x0, y0 int, norm func(float64) float64) {
 		i := cy*w + cx
 		masks[i] |= brailleBits[dx%2][row%4]
 		owner[i] = int8(si)
+		level[i] = max(level[i], cur)
 	}
 
 	slots := w * 2
@@ -192,7 +198,8 @@ func (g *Graph) drawBraille(c *Canvas, x0, y0 int, norm func(float64) float64) {
 		prev := -1
 		for i, v := range vals {
 			dx := off + i
-			lv := levelsFor(norm(v), dotsH)
+			cur = norm(v)
+			lv := levelsFor(cur, dotsH)
 			if g.Style == StyleArea {
 				for dy := 0; dy < lv; dy++ {
 					setDot(dx, dy, si)
@@ -221,7 +228,12 @@ func (g *Graph) drawBraille(c *Canvas, x0, y0 int, norm func(float64) float64) {
 			if masks[i] == 0 {
 				continue
 			}
-			c.Set(x0+x, y0+y, rune(0x2800+int(masks[i])), g.rowColor(g.Series[owner[i]].Gradient, y))
+			grad := g.Series[owner[i]].Gradient
+			color := g.rowColor(grad, y)
+			if g.ColorByValue {
+				color = grad.At(level[i])
+			}
+			c.Set(x0+x, y0+y, rune(0x2800+int(masks[i])), color)
 		}
 	}
 }
@@ -250,7 +262,14 @@ func (g *Graph) drawLevels(c *Canvas, x0, y0 int, norm func(float64) float64) {
 		off := w - len(vals)
 		for i, v := range vals {
 			x := off + i
-			lv := levelsFor(norm(v), h*per)
+			f := norm(v)
+			color := func(y int) RGB {
+				if g.ColorByValue {
+					return s.Gradient.At(f)
+				}
+				return g.rowColor(s.Gradient, y)
+			}
+			lv := levelsFor(f, h*per)
 			full, part := lv/per, lv%per
 			first := 0 // with StyleLine only the topmost cell is drawn
 			if g.Style == StyleLine && part == 0 && full > 0 {
@@ -263,14 +282,14 @@ func (g *Graph) drawLevels(c *Canvas, x0, y0 int, norm func(float64) float64) {
 				if g.Invert {
 					y = k
 				}
-				c.Set(x0+x, y0+y, runes[per], g.rowColor(s.Gradient, y))
+				c.Set(x0+x, y0+y, runes[per], color(y))
 			}
 			if part > 0 && full < h {
 				y := h - 1 - full
 				if g.Invert {
 					y = full
 				}
-				c.Set(x0+x, y0+y, runes[part], g.rowColor(s.Gradient, y))
+				c.Set(x0+x, y0+y, runes[part], color(y))
 			}
 		}
 	}
@@ -282,4 +301,13 @@ func Sparkline(values []float64, width int, lo, hi float64, grad Gradient) strin
 	g := Graph{Width: width, Height: 1, Mode: ModeBlock, Min: lo, Max: hi,
 		Series: []Series{{Values: values, Gradient: grad}}}
 	return g.Render().String()
+}
+
+// Mini renders a small graph of values in [lo, hi] (auto-scaled if hi <= lo)
+// as text rows: the in-line graphs next to cores, memory, disks and
+// processes. A one-row graph is colored by value, taller ones by height.
+func Mini(values []float64, width, height int, mode Mode, lo, hi float64, grad Gradient) []string {
+	g := Graph{Width: width, Height: height, Mode: mode, Min: lo, Max: hi, ColorByValue: height == 1,
+		Series: []Series{{Values: values, Gradient: grad}}}
+	return g.Render().Lines()
 }

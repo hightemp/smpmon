@@ -14,16 +14,26 @@ type disksOptions struct {
 	Mounts []string `yaml:"mounts"`
 	// IO shows read/write rates under each filesystem (default true).
 	IO *bool `yaml:"io"`
+	// Style is graphs (I/O history per filesystem and a total I/O graph in
+	// spare rows) or meters (I/O as numbers).
+	Style string `yaml:"style"`
+	Mode  string `yaml:"mode"`
 }
 
 type disksWidget struct {
-	opts disksOptions
+	opts       disksOptions
+	bufs       map[metrics.Key][]float64
+	rsum, wsum []float64
+	tmp        []float64
 }
 
 func init() {
 	register("disks", func(n *config.Node) (Widget, error) {
-		w := &disksWidget{}
-		return w, n.DecodeOptions(&w.opts)
+		w := &disksWidget{bufs: map[metrics.Key][]float64{}}
+		if err := n.DecodeOptions(&w.opts); err != nil {
+			return nil, err
+		}
+		return w, checkStyle(w.opts.Style)
 	})
 }
 
@@ -93,10 +103,7 @@ func (d *disksWidget) Render(ctx *Context, w, h int) []string {
 		if per == 3 {
 			io := ""
 			if i := slices.IndexFunc(ios, func(x collect.DiskIO) bool { return x.Name == fs.IODevice }); i >= 0 {
-				x := ios[i]
-				io = fg(t.Dim, "r ") + fg(t.Fg, metrics.FormatRate(x.ReadBps)) +
-					fg(t.Dim, "  w ") + fg(t.Fg, metrics.FormatRate(x.WriteBps)) +
-					fg(t.Dim, "  busy ") + fg(t.Disk.At(x.Util/100), metrics.FormatPercent(x.Util))
+				io = d.ioLine(ctx, ios[i], w)
 			}
 			out = append(out, io)
 		}
@@ -104,5 +111,76 @@ func (d *disksWidget) Render(ctx *Context, w, h int) []string {
 	if len(fss) == 0 {
 		out = append(out, fg(t.Dim, "no filesystems"))
 	}
+	if spare := h - len(out); d.opts.Style != "meters" && showIO && spare >= 4 && len(ios) > 0 {
+		out = append(out, "")
+		out = append(out, d.totalGraph(ctx, ios, w, spare-1)...)
+	}
 	return block(out, w, h)
+}
+
+// ioLine renders "r ⣀⣤⣶ 1.2 MiB/s  w ⣀⣀ 0 B/s" (graphs) or the rates and
+// busy time (meters, or when too narrow for graphs).
+func (d *disksWidget) ioLine(ctx *Context, x collect.DiskIO, w int) string {
+	t := ctx.Theme
+	const rateW = 11
+	gw := (w-2*(2+rateW)-2)/2 - 1
+	if d.opts.Style == "meters" || gw < 4 {
+		return fg(t.Dim, "r ") + fg(t.Fg, metrics.FormatRate(x.ReadBps)) +
+			fg(t.Dim, "  w ") + fg(t.Fg, metrics.FormatRate(x.WriteBps)) +
+			fg(t.Dim, "  busy ") + fg(t.Disk.At(x.Util/100), metrics.FormatPercent(x.Util))
+	}
+	base := metrics.NewKey("disk", "io", x.Name)
+	part := func(label string, key metrics.Key, v float64, grad chart.Gradient) string {
+		g := mini(ctx, d.bufs, key, gw, 1, d.opts.Mode, 0, 0, grad)[0]
+		return fg(t.Dim, label+" ") + g + fg(t.Fg, alignRight(metrics.FormatRate(v), rateW))
+	}
+	return part("r", base.Child("read_bps"), x.ReadBps, t.NetRx) + "  " + part("w", base.Child("write_bps"), x.WriteBps, t.NetTx)
+}
+
+// totalGraph draws reads of all whole disks upward and writes downward.
+func (d *disksWidget) totalGraph(ctx *Context, ios []collect.DiskIO, w, h int) []string {
+	t := ctx.Theme
+	mode := graphMode(ctx, d.opts.Mode)
+	top := (h + 1) / 2
+	rg := chart.Graph{Width: w, Height: top, Mode: mode, Series: []chart.Series{{Gradient: t.NetRx}}}
+	wg := chart.Graph{Width: w, Height: h - top, Mode: mode, Invert: true, Series: []chart.Series{{Gradient: t.NetTx}}}
+	d.rsum, d.wsum = d.rsum[:0], d.wsum[:0]
+	var rNow, wNow float64
+	for _, x := range ios {
+		if !isWholeDisk(x.Name, ios) {
+			continue
+		}
+		base := metrics.NewKey("disk", "io", x.Name)
+		d.tmp = ctx.series(base.Child("read_bps"), d.tmp[:0], rg.Slots())
+		d.rsum = addSeries(d.rsum, d.tmp)
+		d.tmp = ctx.series(base.Child("write_bps"), d.tmp[:0], wg.Slots())
+		d.wsum = addSeries(d.wsum, d.tmp)
+		rNow, wNow = rNow+x.ReadBps, wNow+x.WriteBps
+	}
+	rg.Series[0].Values, wg.Series[0].Values = d.rsum, d.wsum
+	c := chart.NewCanvas(w, h)
+	rg.Draw(c, 0, 0)
+	wg.Draw(c, 0, top)
+	c.Text(0, 0, "▲ read "+metrics.FormatRate(rNow), t.Title)
+	c.Text(0, h-1, "▼ write "+metrics.FormatRate(wNow), t.Title)
+	return c.Lines()
+}
+
+// addSeries adds b to sum element-wise, aligning the newest values.
+func addSeries(sum, b []float64) []float64 {
+	if n := len(b); n > len(sum) {
+		old := len(sum)
+		if cap(sum) >= n {
+			sum = sum[:n]
+		} else {
+			sum = append(make([]float64, 0, n), sum...)[:n]
+		}
+		copy(sum[n-old:], sum[:old]) // shift right: older values are on the left
+		clear(sum[:n-old])
+	}
+	off := len(sum) - len(b)
+	for i, v := range b {
+		sum[off+i] += v
+	}
+	return sum
 }

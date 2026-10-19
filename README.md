@@ -23,7 +23,7 @@ A terminal resource monitor in Go, inspired by [btop++](https://github.com/arist
 - Dashboards described as a YAML layout tree of widgets, switchable with `1`–`9`, with size-dependent variants for narrow terminals
 - A layout editor inside the TUI (`e`): split, add, delete, move and resize widgets, drag borders with the mouse, edit widget options, undo, and save back to the config file
 - Built-in dashboards: `btop`, `minimal`, `procs`, `net`, `server`, `hardware`, `gpu`, `containers`. Widgets whose data isn't available on the machine, such as a battery on a desktop, are hidden automatically, and so are tabs left with nothing to show
-- Graphs in braille, block or ASCII mode, with gradients, mirrored upload/download, and auto or log scale
+- Graphs in braille, block or ASCII mode, with gradients, mirrored upload/download, and auto or log scale. Like btop, history graphs are everywhere: next to each core (with its temperature), each memory row, each disk's reads and writes, and each process
 - Generic `graph`, `gauge`, `stat` and `table` widgets that show any metric by selector, such as `cpu.core.*.usage` or `net.*.*_bps`
 - A process table with configurable columns, sorting, filtering, a tree view, a details panel, signals and renice
 - Mouse support, built-in themes, and config hot reload
@@ -66,6 +66,7 @@ Prebuilt binaries and deb/rpm packages are published on the [Releases](https://g
 |---|---|---|---|
 | CPU, memory, disks, network, processes | `/proc`, `/sys` | sysctl, libproc | Win32, NT API |
 | Temperatures | hwmon | SMC | WMI (often needs administrator rights) |
+| Per-core temperatures | Intel (coretemp), AMD per CCD (k10temp) | — | — |
 | GPU | NVIDIA, AMD, Intel | — | NVIDIA |
 | GPU processes | NVIDIA, AMD, Intel | — | NVIDIA (compute only) |
 | Battery | sysfs | `pmset` | `GetSystemPowerStatus` |
@@ -361,9 +362,9 @@ A theme only needs the colors it changes; the rest come from the theme named in 
 
 | Widget | Options |
 |---|---|
-| `cpu` | `cores` (bool), `mode` |
-| `mem` | `graph` (bool), `mode` |
-| `disks` | `mounts` (list), `io` (bool) |
+| `cpu` | `cores` (bool), `mode`, `style` (`graphs` or `meters`) |
+| `mem` | `mode`, `style` (`graphs` or `meters`), `graph` (bool, meters style only) |
+| `disks` | `mounts` (list), `io` (bool), `mode`, `style` (`graphs` or `meters`) |
 | `net` | `interface` (`auto` or a name), `scale` (`auto` or `log`), `mode` |
 | `proc` | `columns`, `sort: {by, desc}`, `tree`, `filter`, `per_core` |
 | `graph` | `metrics` (selectors), `window`, `mode`, `style` (`area` or `line`), `scale`, `min`, `max`, `gradient`, `legend`, `limit` |
@@ -379,7 +380,9 @@ A theme only needs the colors it changes; the rest come from the theme named in 
 | `battery` | — |
 | `docker` | `all` (include stopped), `sort` (`cpu`, `mem`, `net` or `name`) |
 
-Process columns: `pid`, `ppid`, `name`, `cmd`, `user`, `state`, `threads`, `nice`, `cpu`, `mem`, `rss`, `vms`, `read`, `write`, `time`, `start`, and for GPU processes `gpu`, `gpu_type`, `gpu_util`, `vram`, `gpu_enc`, `gpu_dec`.
+With `style: graphs` (the default) the `cpu` widget shows a usage graph, the temperature and a temperature graph for each core; `mem` shows a history graph for each row, one to three rows tall depending on the space; `disks` shows read and write graphs for each filesystem and a total I/O graph in spare rows. When a widget is too small for graphs, it falls back to meters by itself. `style: meters` shows meters only, as in smpmon 2.1.
+
+Process columns: `pid`, `ppid`, `name`, `cmd`, `user`, `state`, `threads`, `nice`, `cpu`, `cpu_graph` (recent CPU use, relative to one core; dropped first when the table is narrow), `mem`, `rss`, `vms`, `read`, `write`, `time`, `start`, and for GPU processes `gpu`, `gpu_type`, `gpu_util`, `vram`, `gpu_enc`, `gpu_dec`.
 
 ### Metrics
 
@@ -397,7 +400,7 @@ Metric keys are dot-separated. Selectors support `*` (one segment), `**` (any nu
 | `net.<if>.{rx_bps,tx_bps,rx_pps,tx_pps,rx_errs,tx_errs,rx_total,tx_total}` | bytes/s, 1/s, bytes |
 | `net.total.*` | sums over physical NICs |
 | `proc.{count,threads,running}`, `proc.<pid>.{cpu,mem}` | count, % |
-| `cpu.temp`, `sensors.<chip>.<label>.temp`, `sensors.<chip>.<label>.fan` | °C, RPM |
+| `cpu.temp`, `cpu.core.<n>.temp`, `sensors.<chip>.<label>.temp`, `sensors.<chip>.<label>.fan` | °C, RPM |
 | `gpu.<n>.{util,mem_util,mem_used_percent,fan,enc,dec}`, `gpu.<n>.{mem_used,mem_total}`, `gpu.<n>.temp`, `gpu.<n>.{power,power_limit}`, `gpu.<n>.{clock,mem_clock}` | %, bytes, °C, W, Hz |
 | `gpu.<n>.{pcie_rx,pcie_tx}`, `gpu.<n>.pstate`, `gpu.<n>.throttled` (1 while power or heat hold the clocks back) | bytes/s, —, — |
 | `battery.{percent,power,time_left}` | %, W, s |

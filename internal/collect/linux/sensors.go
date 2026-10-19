@@ -22,6 +22,7 @@ type sensorInput struct {
 	s     collect.Sensor // static fields; Value is filled per sample
 	key   metrics.Key
 	scale float64
+	pkg   int // CPU package of a coretemp chip
 }
 
 // Sensors reads temperatures and fan speeds from /sys/class/hwmon.
@@ -30,6 +31,7 @@ type Sensors struct {
 	r       reader
 	inputs  []sensorInput
 	cpuTemp []int // indexes of inputs that make up cpu.temp
+	cores   []coreTemp
 	scanned time.Time
 }
 
@@ -94,8 +96,17 @@ func (s *Sensors) scan() error {
 			continue
 		}
 		seen[chip]++
+		pkg := seen[chip] - 1
 		if seen[chip] > 1 {
 			chip = chip + "-" + strconv.Itoa(seen[chip]-1)
+		}
+		// coretemp.N is the chip of CPU package N.
+		if dev, err := os.Readlink(filepath.Join(base, "device")); err == nil {
+			if n, ok := strings.CutPrefix(filepath.Base(dev), "coretemp."); ok {
+				if v, err := strconv.Atoi(n); err == nil {
+					pkg = v
+				}
+			}
 		}
 		files, _ := os.ReadDir(base)
 		for _, f := range files {
@@ -117,6 +128,7 @@ func (s *Sensors) scan() error {
 			in := sensorInput{
 				path: filepath.Join(base, n),
 				s:    collect.Sensor{Chip: chip, Label: label, Kind: kind},
+				pkg:  pkg,
 			}
 			if kind == collect.SensorTemp {
 				in.scale = 1000 // millidegrees
@@ -142,7 +154,82 @@ func (s *Sensors) scan() error {
 	})
 	s.inputs = inputs
 	s.cpuTemp = pickCPUTemp(inputs)
+	s.cores = s.coreTemps(inputs)
 	return nil
+}
+
+// coreTemp is the sensor of one logical CPU.
+type coreTemp struct {
+	key   metrics.Key // cpu.core.<n>.temp
+	input int
+}
+
+// coreTemps maps logical CPUs to per-core sensors: coretemp's "Core N"
+// is the core with core_id N in its package (threads of a core share it);
+// k10temp's "TccdN" covers the CPUs of the Nth L3 cache (CCD), if the
+// numbers match. Other chips have no per-core sensors.
+func (s *Sensors) coreTemps(inputs []sensorInput) []coreTemp {
+	type cpu struct{ n, core, pkg, l3 int }
+	var cpus []cpu
+	dirs, _ := filepath.Glob(s.fs.sys("devices/system/cpu/cpu[0-9]*"))
+	for _, d := range dirs {
+		n, err := strconv.Atoi(strings.TrimPrefix(filepath.Base(d), "cpu"))
+		if err != nil {
+			continue
+		}
+		c := cpu{n: n, core: -1, l3: -1}
+		if v, err := readInt(filepath.Join(d, "topology/core_id")); err == nil {
+			c.core = int(v)
+		}
+		if v, err := readInt(filepath.Join(d, "topology/physical_package_id")); err == nil {
+			c.pkg = int(v)
+		}
+		if v, err := readInt(filepath.Join(d, "cache/index3/id")); err == nil {
+			c.l3 = int(v)
+		}
+		cpus = append(cpus, c)
+	}
+	slices.SortFunc(cpus, func(a, b cpu) int { return a.n - b.n })
+	key := func(n int) metrics.Key { return metrics.NewKey("cpu", "core", strconv.Itoa(n), "temp") }
+
+	var out []coreTemp
+	for _, c := range cpus {
+		want := "Core " + strconv.Itoa(c.core)
+		for i, in := range inputs {
+			chip, _, _ := strings.Cut(in.s.Chip, "-")
+			if chip == "coretemp" && in.pkg == c.pkg && in.s.Label == want {
+				out = append(out, coreTemp{key(c.n), i})
+				break
+			}
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+
+	var ccds []int // inputs of Tccd1, Tccd2, ...
+	for i, in := range inputs {
+		chip, _, _ := strings.Cut(in.s.Chip, "-")
+		if (chip == "k10temp" || chip == "zenpower") && strings.HasPrefix(in.s.Label, "Tccd") {
+			ccds = append(ccds, i)
+		}
+	}
+	var l3s []int
+	for _, c := range cpus {
+		if c.l3 >= 0 && !slices.Contains(l3s, c.l3) {
+			l3s = append(l3s, c.l3)
+		}
+	}
+	slices.Sort(l3s)
+	if len(ccds) == 0 || len(ccds) != len(l3s) {
+		return nil
+	}
+	for _, c := range cpus {
+		if i := slices.Index(l3s, c.l3); i >= 0 {
+			out = append(out, coreTemp{key(c.n), ccds[i]})
+		}
+	}
+	return out
 }
 
 // pickCPUTemp returns the inputs that represent the CPU temperature.
@@ -208,6 +295,11 @@ func (s *Sensors) Collect(_ context.Context, sm *metrics.Sample) error {
 	}
 	if found {
 		sm.Add("cpu.temp", cpuMax)
+	}
+	for _, c := range s.cores {
+		if v := values[c.input]; v >= 0 {
+			sm.Add(c.key, v)
+		}
 	}
 	sm.SetTable(collect.TableSensors, out)
 	return nil

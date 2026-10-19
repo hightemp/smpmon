@@ -104,7 +104,19 @@ var procColumns = map[string]procColumn{
 		cmp: func(a, b *collect.Process) int { return a.StartTime.Compare(b.StartTime) }},
 }
 
-var defaultProcColumns = []string{"pid", "name", "cmd", "threads", "user", "rss", "cpu"}
+var defaultProcColumns = []string{"pid", "name", "cmd", "threads", "user", "rss", "cpu_graph", "cpu"}
+
+// Graph columns are drawn by the widget rather than as text, and are the
+// first to go when the table is too narrow.
+func init() {
+	procColumns["cpu_graph"] = procColumn{key: "cpu_graph", header: "", width: 8,
+		value: func(*collect.Process, *procWidget, *Context) string { return "" },
+		cmp:   func(a, b *collect.Process) int { return cmp.Compare(a.CPU, b.CPU) }}
+}
+
+// minFlex is the width the flexible column (the command) keeps before
+// graph columns give way.
+const minFlex = 20
 
 // procRow is a process as displayed, with its tree prefix.
 type procRow struct {
@@ -136,6 +148,7 @@ type procWidget struct {
 	colX      []int
 
 	cpuBuf, memBuf []float64
+	graphBuf       []float64
 
 	// gpu lists only processes using a GPU (the gpu_procs widget).
 	gpu     bool
@@ -374,9 +387,20 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 	widths := make([]int, len(w.cols))
 	used := 0
 	flex := -1
+	fixed := 0
+	for _, c := range w.cols {
+		if c.width > 0 {
+			fixed += max(c.width, len(c.header)) + 1
+		}
+	}
+	dropGraphs := fixed+minFlex > width
 	for i, c := range w.cols {
 		if c.width == 0 && flex < 0 {
 			flex = i
+			continue
+		}
+		if dropGraphs && c.key == "cpu_graph" {
+			widths[i] = -1
 			continue
 		}
 		cw := max(c.width, len(c.header))
@@ -437,6 +461,8 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 			}
 			s := cell(i, v)
 			switch {
+			case c.key == "cpu_graph":
+				s = w.cpuGraph(ctx, p, widths[i])
 			case selected:
 			case c.key == "cpu":
 				s = fg(t.Proc.At(w.cpu(ctx, p)/100), s)
@@ -462,6 +488,17 @@ func (w *procWidget) Render(ctx *Context, width, h int) []string {
 		out = append(out, w.renderDetails(ctx, width, detailsH)...)
 	}
 	return out
+}
+
+// cpuGraph draws the process's recent CPU use, relative to one core.
+func (w *procWidget) cpuGraph(ctx *Context, p *collect.Process, width int) string {
+	m := ctx.GraphMode
+	slots := width
+	if m == chart.ModeBraille {
+		slots *= 2
+	}
+	w.graphBuf = ctx.series(metrics.NewKey("proc", strconv.Itoa(int(p.PID)), "cpu"), w.graphBuf[:0], slots)
+	return chart.Mini(w.graphBuf, width, 1, m, 0, 100, ctx.Theme.Proc)[0]
 }
 
 func (w *procWidget) selected() *collect.Process {

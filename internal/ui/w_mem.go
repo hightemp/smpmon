@@ -7,19 +7,25 @@ import (
 )
 
 type memOptions struct {
-	Graph *bool  `yaml:"graph"` // graph used memory in spare rows (default true)
+	Graph *bool  `yaml:"graph"` // meters style: graph used memory in spare rows (default true)
 	Mode  string `yaml:"mode"`
+	// Style is graphs (a history graph per row, like btop) or meters.
+	Style string `yaml:"style"`
 }
 
 type memWidget struct {
 	opts memOptions
 	buf  []float64
+	bufs map[metrics.Key][]float64
 }
 
 func init() {
 	register("mem", func(n *config.Node) (Widget, error) {
-		w := &memWidget{}
-		return w, n.DecodeOptions(&w.opts)
+		w := &memWidget{bufs: map[metrics.Key][]float64{}}
+		if err := n.DecodeOptions(&w.opts); err != nil {
+			return nil, err
+		}
+		return w, checkStyle(w.opts.Style)
 	})
 }
 
@@ -55,6 +61,11 @@ func (m *memWidget) Render(ctx *Context, w, h int) []string {
 	if len(rows) > h {
 		rows = rows[:h]
 	}
+	if m.opts.Style != "meters" {
+		if out := m.renderGraphs(ctx, rows, w, h); out != nil {
+			return out
+		}
+	}
 
 	labelW := 10
 	valueW := 10
@@ -84,6 +95,46 @@ func (m *memWidget) Render(ctx *Context, w, h int) []string {
 		g.Series[0].Values = m.buf
 		out = append(out, "")
 		out = append(out, g.Render().Lines()...)
+	}
+	return block(out, w, h)
+}
+
+// renderGraphs draws each row as "Used:  22.4 GiB" over a history graph
+// with the percentage at its right, using one to three graph rows as the
+// height allows; with less room each row is a single line with an in-line
+// graph. It returns nil when even that doesn't fit.
+func (m *memWidget) renderGraphs(ctx *Context, rows []memRow, w, h int) []string {
+	t := ctx.Theme
+	const labelW, pctW, valueW = 10, 6, 10
+	per := h / len(rows)
+	inline := w - labelW - pctW - valueW - 1 // width of single-line graphs
+	if per < 2 && inline < 4 {
+		return nil
+	}
+	gh := min(per-1, 3)
+	var out []string
+	for _, r := range rows {
+		v, _ := ctx.Store.Last(r.key)
+		total, _ := ctx.Store.Last(r.total)
+		f := 0.0
+		if total > 0 {
+			f = v / total
+		}
+		pct := fg(r.grad.At(f), alignRight(metrics.FormatPercent(f*100), pctW))
+		value := fg(t.Fg, metrics.FormatBytes(v))
+		if per < 2 {
+			g := mini(ctx, m.bufs, r.key, inline, 1, m.opts.Mode, 0, total, r.grad)
+			out = append(out, fg(t.Title, fit(r.label, labelW))+g[0]+" "+pct+alignRight(value, valueW))
+			continue
+		}
+		out = append(out, spread(fg(t.Title, r.label+":"), value, w))
+		g := mini(ctx, m.bufs, r.key, w-pctW, gh, m.opts.Mode, 0, total, r.grad)
+		for i, l := range g {
+			if i == 0 {
+				l += pct
+			}
+			out = append(out, l)
+		}
 	}
 	return block(out, w, h)
 }

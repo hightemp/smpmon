@@ -5,6 +5,7 @@ package linux
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -487,5 +488,59 @@ func TestBattery(t *testing.T) {
 
 	if err := NewBattery(newFixture(t).fs).Init(); !errors.Is(err, collect.ErrUnsupported) {
 		t.Errorf("no battery: %v", err)
+	}
+}
+
+func TestCoreTemps(t *testing.T) {
+	f := newFixture(t)
+	f.sys("class/hwmon/hwmon0/name", "coretemp\n")
+	f.sys("class/hwmon/hwmon0/temp1_input", "50000\n")
+	f.sys("class/hwmon/hwmon0/temp1_label", "Package id 0\n")
+	f.sys("class/hwmon/hwmon0/temp2_input", "41000\n")
+	f.sys("class/hwmon/hwmon0/temp2_label", "Core 0\n")
+	f.sys("class/hwmon/hwmon0/temp3_input", "47000\n")
+	f.sys("class/hwmon/hwmon0/temp3_label", "Core 4\n")
+	// Two threads on core 0, one on core 4 (an E-core), one without a sensor.
+	for cpu, core := range map[int]string{0: "0", 1: "0", 2: "4", 3: "9"} {
+		f.sys(fmt.Sprintf("devices/system/cpu/cpu%d/topology/core_id", cpu), core+"\n")
+		f.sys(fmt.Sprintf("devices/system/cpu/cpu%d/topology/physical_package_id", cpu), "0\n")
+	}
+	s := NewSensors(f.fs)
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sm := collectAt(t, s, time.Now())
+	for k, want := range map[metrics.Key]float64{"cpu.core.0.temp": 41, "cpu.core.1.temp": 41, "cpu.core.2.temp": 47} {
+		if v := value(t, sm, k); v != want {
+			t.Errorf("%s = %v, want %v", k, v, want)
+		}
+	}
+	for _, p := range sm.Points {
+		if p.Key == "cpu.core.3.temp" {
+			t.Error("cpu 3 has no sensor")
+		}
+	}
+}
+
+func TestCoreTempsAMD(t *testing.T) {
+	f := newFixture(t)
+	f.sys("class/hwmon/hwmon0/name", "k10temp\n")
+	f.sys("class/hwmon/hwmon0/temp1_input", "60000\n")
+	f.sys("class/hwmon/hwmon0/temp1_label", "Tctl\n")
+	f.sys("class/hwmon/hwmon0/temp3_input", "55000\n")
+	f.sys("class/hwmon/hwmon0/temp3_label", "Tccd1\n")
+	f.sys("class/hwmon/hwmon0/temp4_input", "58000\n")
+	f.sys("class/hwmon/hwmon0/temp4_label", "Tccd2\n")
+	for cpu, l3 := range map[int]string{0: "0", 1: "0", 2: "1", 3: "1"} {
+		f.sys(fmt.Sprintf("devices/system/cpu/cpu%d/topology/core_id", cpu), fmt.Sprint(cpu)+"\n")
+		f.sys(fmt.Sprintf("devices/system/cpu/cpu%d/cache/index3/id", cpu), l3+"\n")
+	}
+	s := NewSensors(f.fs)
+	if err := s.Init(); err != nil {
+		t.Fatal(err)
+	}
+	sm := collectAt(t, s, time.Now())
+	if value(t, sm, "cpu.core.1.temp") != 55 || value(t, sm, "cpu.core.2.temp") != 58 || value(t, sm, "cpu.temp") != 60 {
+		t.Errorf("points %+v", sm.Points)
 	}
 }

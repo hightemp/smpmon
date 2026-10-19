@@ -202,3 +202,22 @@ func BenchmarkBlock200x50(b *testing.B) {
 		_ = g.Render().String()
 	}
 }
+
+func TestColorByValue(t *testing.T) {
+	grad := Gradient{{0, 0, 0}, {255, 255, 255}}
+	for _, mode := range []Mode{ModeBraille, ModeBlock, ModeASCII} {
+		g := Graph{Width: 2, Height: 1, Mode: mode, Max: 100, ColorByValue: true,
+			Series: []Series{{Values: []float64{10, 10, 100, 100}, Gradient: grad}}}
+		if mode != ModeBraille {
+			g.Series[0].Values = []float64{10, 100}
+		}
+		c := g.Render()
+		low, high := c.cells[0].fg, c.cells[1].fg
+		if low != grad.At(0.1) || high != grad.At(1) {
+			t.Errorf("%v: colors %v %v", mode, low, high)
+		}
+	}
+	if lines := Mini([]float64{50, 50}, 3, 2, ModeBlock, 0, 100, grad); len(lines) != 2 {
+		t.Fatalf("mini %q", lines)
+	}
+}

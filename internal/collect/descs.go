@@ -24,7 +24,8 @@ import "github.com/hightemp/smpmon/internal/metrics"
 //	net.total.{rx_bps,tx_bps,rx_total,tx_total}  sums over physical NICs
 //	proc.count, proc.threads, proc.running       count
 //	proc.<pid>.{cpu,mem}                         percent
-//	cpu.temp, sensors.<chip>.<label>.temp        °C
+//	cpu.temp, cpu.core.<n>.temp                  °C (per core where sensors allow)
+//	sensors.<chip>.<label>.temp                  °C
 //	sensors.<chip>.<label>.fan                   RPM
 //	gpu.<n>.{util,mem_util,mem_used_percent,fan} percent
 //	gpu.<n>.{mem_used,mem_total}                 bytes
@@ -44,6 +45,7 @@ func init() {
 		metrics.Desc{Pattern: "cpu.**.freq", Unit: metrics.UnitHertz, Help: "CPU frequency"},
 		metrics.Desc{Pattern: "cpu.freq", Unit: metrics.UnitHertz, Help: "Average CPU frequency"},
 		metrics.Desc{Pattern: "cpu.temp", Unit: metrics.UnitCelsius, Max: 100, Help: "CPU temperature"},
+		metrics.Desc{Pattern: "cpu.core.*.temp", Unit: metrics.UnitCelsius, Max: 100, Help: "CPU core temperature"},
 		metrics.Desc{Pattern: "cpu.**", Unit: metrics.UnitPercent, Max: 100, Help: "CPU usage"},
 		metrics.Desc{Pattern: "load.*", Unit: metrics.UnitNone, Help: "Load average"},
 		metrics.Desc{Pattern: "system.uptime", Unit: metrics.UnitSeconds, Help: "Uptime"},

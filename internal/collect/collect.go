@@ -73,7 +73,7 @@ func CollectorsFor(patterns []string) []string {
 		switch first {
 		case "cpu":
 			add("cpu")
-			if strings.HasPrefix(p, "cpu.temp") {
+			if last := p[strings.LastIndexByte(p, '.')+1:]; last == "**" || matchGlob(last, "temp") {
 				add("sensors")
 			}
 		case "sensors":
